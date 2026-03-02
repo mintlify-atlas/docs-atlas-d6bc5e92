@@ -1,0 +1,72 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "WooCommerce Azul Payment Gateway",
+  "projectDescription": "WordPress plugin to integrate Azul payment gateway from Banco Popular Dominicano with WooCommerce stores.",
+  "theme": "palm",
+  "primaryColor": "#0066CC",
+  "lightColor": "#3399FF",
+  "darkColor": "#004C99",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Configuration",
+        "pages": [
+          "configuration/settings",
+          "configuration/sandbox-mode",
+          "configuration/theme-files"
+        ]
+      },
+      {
+        "group": "Features",
+        "pages": [
+          "features/payment-processing",
+          "features/response-handling",
+          "features/order-management"
+        ]
+      },
+      {
+        "group": "Integration",
+        "pages": [
+          "integration/authentication",
+          "integration/payment-flow",
+          "integration/callbacks"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/parameters",
+          "reference/response-codes",
+          "reference/troubleshooting"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "WooCommerce payment gateway integration",
+    "Sandbox and production mode support",
+    "SHA-512 authentication hash generation",
+    "Custom field support for order tracking",
+    "Automatic order status management",
+    "Email notification integration",
+    "Tax (ITBIS) handling",
+    "Payment response validation"
+  ],
+  "publicApiSurface": [
+    "AzulPaymentGateway class",
+    "init_form_fields() - Initialize gateway settings",
+    "process_payment($order_id) - Process WooCommerce payment",
+    "get_return_url($order) - Get payment return URL",
+    "checkResponse() - Validate Azul payment response",
+    "azulResponse() - Handle Azul callback",
+    "woo_add_gateway_class($methods) - Register gateway with WooCommerce"
+  ]
+}
