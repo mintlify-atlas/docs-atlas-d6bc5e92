@@ -78,7 +78,7 @@ The plugin consists of three main components:
 
 ### Payment gateway class
 
-Extends `WC_Payment_Gateway` to integrate with WooCommerce's payment processing system. Handles configuration, form fields, and payment initiation.
+Extends `WC_Payment_Gateway` to integrate with WooCommerce's payment processing system. Handles configuration, form fields, and payment initiation. The gateway is registered with WooCommerce via the `woo_add_gateway_class()` filter function.
 
 ### Process template
 

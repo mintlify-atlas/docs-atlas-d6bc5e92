@@ -53,7 +53,7 @@ $authHash = hash('sha512',
   $approvedUrl . 
   $declinedUrl . 
   $cancelUrl . 
-  $responsePostUrl . 
+  $approvedUrl . 
   $useCustomField1 . 
   $customFieldLabel . 
   $customFieldValue . 
@@ -62,9 +62,9 @@ $authHash = hash('sha512',
 );
 ```
 
-<Info>
-The `responsePostUrl` is typically the same as `approvedUrl` in this implementation.
-</Info>
+<Note>
+Note that `$approvedUrl` appears twice in the hash calculation (line 190-192 of AzulPaymentGateway.php).
+</Note>
 
 ### Hash parameters breakdown
 
@@ -90,10 +90,11 @@ The next parameters define the transaction:
 <Step title="Response URLs">
 URLs where Azul will redirect the customer:
 
-- **approvedUrl**: Page to show when payment is approved
+- **approvedUrl**: Page to show when payment is approved (appears twice in the hash)
 - **declinedUrl**: Page to show when payment is declined
 - **cancelUrl**: Page to show when customer cancels
-- **responsePostUrl**: URL to receive the payment response (usually same as approvedUrl)
+
+<Note>The approvedUrl is included twice in the hash calculation per Azul's specification.</Note>
 </Step>
 
 <Step title="Custom fields">
