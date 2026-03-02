@@ -1,0 +1,250 @@
+---
+title: "Authentication"
+description: "Learn how to authenticate requests to Azul payment gateway using SHA-512 hash generation"
+---
+
+## Overview
+
+The WooCommerce Azul Payment Gateway uses SHA-512 hash-based authentication to secure payment requests. The `AuthHash` parameter is computed by concatenating specific transaction data with your merchant credentials and then hashing the result.
+
+<Warning>
+Never expose your `authKey` in client-side code or public repositories. This key should only be stored in your WordPress admin settings.
+</Warning>
+
+## Authentication key
+
+The `authKey` is a private key provided by Azul (Banco Popular Dominicano) when you register your merchant account. This key is used to generate the authentication hash for each transaction.
+
+### Configuration
+
+The authentication key is configured in the WooCommerce payment gateway settings:
+
+```php
+'authKey' => array(
+  'title'       => __( 'AUTH_KEY', 'woo_azul' ),
+  'type'        => 'text',
+  'description' => __( 'Introducir el código de autorización que le entregó Azul.', 'woo_azul' ),
+  'default'     => "",
+  'desc_tip'    => true,
+  'placeholder' => 'OgYw6jAQaegyGYPUAdAHy...'
+)
+```
+
+You can find this setting in:
+**WooCommerce** > **Settings** > **Payments** > **Azul Payments Gateway** > **AUTH_KEY**
+
+## AuthHash generation
+
+The `AuthHash` is the core security mechanism that validates the integrity of payment requests. It's generated using the SHA-512 hashing algorithm.
+
+### SHA-512 hash formula
+
+The hash is computed by concatenating the following parameters in this exact order:
+
+```php
+$authHash = hash('sha512', 
+  $merchantId . 
+  $merchantName . 
+  $merchantType . 
+  $currencyCode .
+  $orderNumber . 
+  $amount . 
+  $itbis . 
+  $approvedUrl . 
+  $declinedUrl . 
+  $cancelUrl . 
+  $responsePostUrl . 
+  $useCustomField1 . 
+  $customFieldLabel . 
+  $customFieldValue . 
+  $useCustomField2 . 
+  $authKey
+);
+```
+
+<Info>
+The `responsePostUrl` is typically the same as `approvedUrl` in this implementation.
+</Info>
+
+### Hash parameters breakdown
+
+<Steps>
+
+<Step title="Merchant identification">
+The first three parameters identify your merchant account:
+
+- **merchantId**: Your unique merchant ID from Azul
+- **merchantName**: Your business name registered with Azul
+- **merchantType**: Type of business (e.g., "Comercio electronico")
+</Step>
+
+<Step title="Transaction details">
+The next parameters define the transaction:
+
+- **currencyCode**: Currency symbol (typically "$" for DOP)
+- **orderNumber**: WooCommerce order ID
+- **amount**: Total order amount (formatted without decimals)
+- **itbis**: Tax amount (ITBIS - Dominican tax, formatted without decimals)
+</Step>
+
+<Step title="Response URLs">
+URLs where Azul will redirect the customer:
+
+- **approvedUrl**: Page to show when payment is approved
+- **declinedUrl**: Page to show when payment is declined
+- **cancelUrl**: Page to show when customer cancels
+- **responsePostUrl**: URL to receive the payment response (usually same as approvedUrl)
+</Step>
+
+<Step title="Custom fields">
+Optional fields for tracking additional data:
+
+- **useCustomField1**: Whether to use custom field ("1" or "0")
+- **customFieldLabel**: Label for custom field (e.g., "orderId")
+- **customFieldValue**: Value for custom field (order number)
+- **useCustomField2**: Whether to use second custom field ("1" or "0")
+</Step>
+
+<Step title="Authentication key">
+Finally, append your secret authentication key:
+
+- **authKey**: Your private key from Azul
+</Step>
+
+</Steps>
+
+## Implementation example
+
+Here's the complete implementation from `AzulPaymentGateway.php:190-192`:
+
+```php
+public function process_payment( $order_id ) {
+    global $woocommerce;
+    $order = new WC_Order( $order_id );
+    $OrderNumber = $order_id;
+    
+    // Set currency and custom fields
+    $this->currencyCode = "$";
+    $this->useCustomField1 = "1";
+    $this->customFieldLabel = "orderId";
+    $this->customFieldValue = $OrderNumber;
+    $this->useCustomField2 = "0";
+    
+    // Format amounts (remove decimals)
+    $this->itbis = number_format($order->get_total_tax(), 2); 
+    $this->itbis = str_replace(".", "", $this->itbis);
+    $this->itbis = str_replace(",", "", $this->itbis);
+    
+    $this->cost = number_format($order->get_total(), 2); 
+    $this->cost = str_replace(".", "", $this->cost);
+    $this->cost = str_replace(",", "", $this->cost);
+    
+    // Generate AuthHash
+    $this->authHash = hash('sha512', 
+        $this->merchantId . 
+        $this->merchantName . 
+        $this->merchantType . 
+        $this->currencyCode .
+        $OrderNumber . 
+        $this->cost . 
+        $this->itbis . 
+        $this->approvedUrl . 
+        $this->declinedUrl . 
+        $this->cancelUrl . 
+        $this->approvedUrl .  // ResponsePostUrl uses approvedUrl
+        $this->useCustomField1 . 
+        $this->customFieldLabel . 
+        $this->customFieldValue . 
+        $this->useCustomField2 . 
+        $this->authKey
+    );
+}
+```
+
+## Amount formatting
+
+Azul requires amounts to be sent as integers without decimal separators.
+
+### Formatting process
+
+<Tabs>
+<Tab title="Tax amount (ITBIS)">
+```php
+// Format tax amount
+$this->itbis = number_format($order->get_total_tax(), 2);
+$this->itbis = str_replace(".", "", $this->itbis);
+$this->itbis = str_replace(",", "", $this->itbis);
+
+// Example: $15.50 becomes "1550"
+```
+</Tab>
+
+<Tab title="Total amount">
+```php
+// Format total amount
+$this->cost = number_format($order->get_total(), 2);
+$this->cost = str_replace(".", "", $this->cost);
+$this->cost = str_replace(",", "", $this->cost);
+
+// Example: $100.99 becomes "10099"
+```
+</Tab>
+</Tabs>
+
+<Warning>
+Both amounts must be formatted identically:
+1. Format to 2 decimal places
+2. Remove the decimal point
+3. Remove any commas
+
+Incorrect formatting will cause authentication failures.
+</Warning>
+
+## Security best practices
+
+<Steps>
+
+<Step title="Protect your authKey">
+Never commit your production `authKey` to version control. Use environment variables or WordPress options to store sensitive credentials.
+</Step>
+
+<Step title="Validate hash order">
+Ensure parameters are concatenated in the exact order specified. Changing the order will produce a different hash and cause authentication to fail.
+</Step>
+
+<Step title="Use HTTPS">
+Always use HTTPS for your response URLs to prevent man-in-the-middle attacks:
+
+```php
+$this->approvedUrl = 'https://yoursite.com/approved';
+$this->declinedUrl = 'https://yoursite.com/declined';
+$this->cancelUrl = 'https://yoursite.com/cancelled';
+```
+</Step>
+
+<Step title="Test in sandbox first">
+Use the sandbox mode to test your authentication implementation before going live. Sandbox and production environments use different URLs but the same authentication mechanism.
+</Step>
+
+</Steps>
+
+## Common authentication errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Invalid AuthHash | Parameters concatenated in wrong order | Verify the exact order matches the formula |
+| Authentication failed | Wrong authKey | Verify you're using the correct key for your environment (sandbox vs production) |
+| Amount mismatch | Incorrect formatting | Ensure amounts are formatted without decimal points |
+| Missing parameters | Incomplete hash | Include all parameters, even empty ones (like useCustomField2 = "0") |
+
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="Payment flow" icon="arrow-right-arrow-left" href="/integration/payment-flow">
+Learn how the complete payment flow works from checkout to confirmation
+</Card>
+
+<Card title="Callbacks" icon="webhook" href="/integration/callbacks">
+Understand how to handle payment responses from Azul
+</Card>
+</CardGroup>

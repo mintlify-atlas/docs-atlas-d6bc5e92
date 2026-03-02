@@ -1,0 +1,225 @@
+---
+title: Parameters
+description: Complete reference for all parameters sent to Azul Payment Gateway
+---
+
+This page documents all parameters used when processing payments through the Azul Payment Gateway. These parameters are sent to Azul's payment page to initiate a transaction.
+
+## Request parameters
+
+These parameters are sent from your WooCommerce store to Azul's payment page when initiating a payment.
+
+### Merchant identification
+
+<ParamField path="MerchantId" type="string" required>
+  Unique identifier for your merchant account provided by Azul. This is configured in the plugin settings under **ID del Comerciante**.
+  
+  **Example:** `39038540917`
+  
+  **Source:** AzulPaymentGateway.php:195, azulWooProcessPayment.php:70
+</ParamField>
+
+<ParamField path="MerchantName" type="string" required>
+  The commercial name of your business as registered with Banco Popular Dominicano (BPD). This appears on the payment page and customer receipts.
+  
+  **Example:** `Mi Tienda Online`
+  
+  **Source:** AzulPaymentGateway.php:196, azulWooProcessPayment.php:71
+</ParamField>
+
+<ParamField path="MerchantType" type="string" required>
+  The type of commerce registered with BPD. This categorizes your business for payment processing.
+  
+  **Default:** `Comercio electronico`
+  
+  **Source:** AzulPaymentGateway.php:197, azulWooProcessPayment.php:72
+</ParamField>
+
+### Transaction details
+
+<ParamField path="OrderNumber" type="string" required>
+  The WooCommerce order ID. This uniquely identifies the order being processed and is used to track the transaction.
+  
+  **Format:** Numeric order ID from WooCommerce
+  
+  **Example:** `1234`
+  
+  **Source:** AzulPaymentGateway.php:165, 200, azulWooProcessPayment.php:75
+</ParamField>
+
+<ParamField path="Amount" type="string" required>
+  The total order amount in cents (without decimal point). The plugin automatically converts the WooCommerce order total by removing decimals.
+  
+  **Format:** Amount in cents (multiply by 100, remove decimal point)
+  
+  **Example:** `250000` (for $2,500.00)
+  
+  **Processing:** The amount is formatted using `number_format($order->get_total(), 2)` then periods and commas are removed.
+  
+  **Source:** AzulPaymentGateway.php:186-188, 201, azulWooProcessPayment.php:76
+</ParamField>
+
+<ParamField path="CurrencyCode" type="string" required>
+  The currency symbol used for the transaction. Currently set to dollar sign.
+  
+  **Default:** `$`
+  
+  **Source:** AzulPaymentGateway.php:166, 198, azulWooProcessPayment.php:73
+</ParamField>
+
+<ParamField path="itbis" type="string" required>
+  ITBIS (Dominican Republic sales tax) amount in cents. Calculated from WooCommerce order taxes.
+  
+  **Format:** Tax amount in cents (without decimal point)
+  
+  **Example:** `47500` (for $475.00 in taxes)
+  
+  **Processing:** Formatted using `number_format($order->get_total_tax(), 2)` with decimals and commas removed.
+  
+  **Source:** AzulPaymentGateway.php:182-184, 199, azulWooProcessPayment.php:74
+</ParamField>
+
+### Redirect URLs
+
+<ParamField path="ApprovedUrl" type="string" required>
+  URL where customers are redirected after a successful payment. This should point to your order complete page.
+  
+  **Configuration:** Set in plugin settings under **Pagina de aprobacion**
+  
+  **Default:** Site URL
+  
+  **Source:** AzulPaymentGateway.php:178, 202, azulWooProcessPayment.php:77
+</ParamField>
+
+<ParamField path="DeclinedUrl" type="string" required>
+  URL where customers are redirected when a payment is declined by the payment processor.
+  
+  **Configuration:** Set in plugin settings under **Pagina de declinacion**
+  
+  **Default:** Site URL
+  
+  **Source:** AzulPaymentGateway.php:179, 203, azulWooProcessPayment.php:78
+</ParamField>
+
+<ParamField path="CancelUrl" type="string" required>
+  URL where customers are redirected if they cancel the payment process.
+  
+  **Configuration:** Set in plugin settings under **Pagina de cancelacion**
+  
+  **Default:** Site URL
+  
+  **Source:** AzulPaymentGateway.php:180, 204, azulWooProcessPayment.php:79
+</ParamField>
+
+<ParamField path="ResponsePostUrl" type="string" required>
+  URL where Azul sends the payment response data. This handles the server-side callback with transaction results.
+  
+  **Value:** Same as ApprovedUrl in the current implementation
+  
+  **Source:** AzulPaymentGateway.php:205, azulWooProcessPayment.php:80
+</ParamField>
+
+### Custom fields
+
+<ParamField path="UseCustomField1" type="string" required>
+  Flag indicating whether custom field 1 is enabled. Used to pass the order ID to Azul.
+  
+  **Values:** `1` (enabled) or `0` (disabled)
+  
+  **Default:** `1`
+  
+  **Source:** AzulPaymentGateway.php:167, 206, azulWooProcessPayment.php:81
+</ParamField>
+
+<ParamField path="CustomField1Label" type="string">
+  Label for custom field 1. Used to identify the order ID field.
+  
+  **Default:** `orderId`
+  
+  **Source:** AzulPaymentGateway.php:168, 207, azulWooProcessPayment.php:82
+</ParamField>
+
+<ParamField path="CustomField1Value" type="string">
+  Value for custom field 1. Contains the WooCommerce order number.
+  
+  **Value:** Same as OrderNumber
+  
+  **Source:** AzulPaymentGateway.php:169, 208, azulWooProcessPayment.php:83
+</ParamField>
+
+<ParamField path="UseCustomField2" type="string" required>
+  Flag indicating whether custom field 2 is enabled. Currently disabled in the implementation.
+  
+  **Values:** `1` (enabled) or `0` (disabled)
+  
+  **Default:** `0`
+  
+  **Source:** AzulPaymentGateway.php:170, 209, azulWooProcessPayment.php:84
+</ParamField>
+
+### Security
+
+<ParamField path="AuthHash" type="string" required>
+  SHA-512 hash used to verify the authenticity of the payment request. This prevents tampering with payment data.
+  
+  **Algorithm:** SHA-512
+  
+  **Components:** Concatenation of MerchantId, MerchantName, MerchantType, CurrencyCode, OrderNumber, Amount (cost), itbis, ApprovedUrl, DeclinedUrl, CancelUrl, ResponsePostUrl (ApprovedUrl), UseCustomField1, CustomField1Label, CustomField1Value, UseCustomField2, and authKey
+  
+  **Generation:**
+  ```php
+  hash('sha512', $merchantId . $merchantName . $merchantType . $currencyCode . 
+       $orderNumber . $cost . $itbis . $approvedUrl . $declinedUrl . 
+       $cancelUrl . $approvedUrl . $useCustomField1 . $customFieldLabel . 
+       $customFieldValue . $useCustomField2 . $authKey)
+  ```
+  
+  <Note>
+    The authKey is your private AUTH_KEY provided by Azul and should never be exposed to customers.
+  </Note>
+  
+  **Source:** AzulPaymentGateway.php:190-192, 210, azulWooProcessPayment.php:85
+</ParamField>
+
+### Display options
+
+<ParamField path="ShowTransactionResult" type="integer" required>
+  Controls whether Azul displays the transaction result page after processing.
+  
+  **Values:**
+  - `0` - Redirect immediately to your URLs (recommended)
+  - `1` - Show Azul's transaction result page first
+  
+  **Default:** `0`
+  
+  **Source:** AzulPaymentGateway.php:211
+</ParamField>
+
+### Internal parameters
+
+<ParamField path="AzulUrl" type="string" internal>
+  The Azul payment page URL where the payment form is submitted. This varies based on sandbox mode.
+  
+  **Production:** `https://pagos.azul.com.do/PaymentPage/default.aspx`
+  
+  **Sandbox:** `https://pruebas.azul.com.do/PaymentPage/default.aspx`
+  
+  **Source:** AzulPaymentGateway.php:54-57, 212, azulWooProcessPayment.php:69
+</ParamField>
+
+## Validation
+
+The plugin performs the following validations before sending parameters to Azul:
+
+<Warning>
+  **Amount validation:** The payment will fail if the Amount is zero. The plugin checks `if($this->cost != 0)` at AzulPaymentGateway.php:216 and returns a failure result if the amount is invalid.
+</Warning>
+
+## Parameter flow
+
+1. **Order creation:** Customer completes checkout in WooCommerce
+2. **Parameter preparation:** Plugin gathers all parameters from order data and plugin settings (AzulPaymentGateway.php:162-213)
+3. **Hash generation:** AuthHash is calculated for security verification
+4. **URL construction:** Parameters are encoded as query string and appended to processUrl
+5. **Redirect:** Customer is redirected to the process page with all parameters
+6. **Form submission:** Process page auto-submits form to Azul (azulWooProcessPayment.php:69-93)

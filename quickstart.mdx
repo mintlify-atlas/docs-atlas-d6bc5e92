@@ -1,80 +1,307 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick start
+description: Configure your Azul payment gateway and process your first transaction in minutes
 ---
 
-## Get started in three steps
+This guide will help you configure the WooCommerce Azul Payment Gateway and process your first test transaction.
 
-Get your documentation site running locally and make your first customization.
+## Before you begin
 
-### Step 1: Set up your local environment
+Make sure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+- Completed the [installation process](/installation)
+- Created the payment process page
+- Received credentials from Azul/Banco Popular Dominicano
+- Enabled sandbox mode credentials for testing (if available)
+
+<Info>
+Always test in sandbox mode before processing live transactions. This ensures your integration works correctly without risking real money.
+</Info>
+
+## Configure the payment gateway
+
+<Steps>
+  <Step title="Access payment settings">
+    Navigate to the Azul payment gateway settings:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    1. Go to **WooCommerce → Settings**
+    2. Click the **Payments** tab
+    3. Find **Azul Payments Gateway** in the list
+    4. Click **Manage**
+  </Step>
+
+  <Step title="Enable the gateway">
+    Configure the basic settings:
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    - **Enabled/Disabled**: Check this box to enable the gateway
+    - **Title**: Enter "Azul" or "Credit/Debit Card" (visible to customers)
+    - **Description**: Enter "Pay via Azul; you can pay using your credit or debit card."
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    <Note>
+    The title and description appear on the checkout page, so use customer-friendly language.
+    </Note>
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Enable sandbox mode">
+    Enable test mode for safe testing:
+    
+    - **Sandbox**: Check this box to enable test mode
+    - **Debug**: Check this box to enable logging (helpful for troubleshooting)
+    
+    <Warning>
+    Remember to disable sandbox mode before going live! Test mode uses a different Azul URL and won't process real payments.
+    </Warning>
+    
+    When sandbox mode is enabled, the plugin uses:
+    ```
+    https://pruebas.azul.com.do/PaymentPage/default.aspx
+    ```
+    
+    When disabled (production mode), it uses:
+    ```
+    https://pagos.azul.com.do/PaymentPage/default.aspx
+    ```
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Enter merchant credentials">
+    Add your Azul merchant information:
+    
+    - **AUTH_KEY**: Your authentication key from Azul (e.g., `OgYw6jAQaegyGYPUAdAHy...`)
+    - **Merchant ID**: Your merchant ID (e.g., `0123456789`)
+    - **Merchant Name**: Your business name as registered with Azul
+    - **Merchant Type**: Enter `Comercio electronico` or the type provided by Banco Popular
+    
+    <Warning>
+    Keep your AUTH_KEY secure! This is used to generate authentication hashes for all transactions.
+    </Warning>
+  </Step>
 
-### Step 3: Go live
+  <Step title="Configure return URLs">
+    Set up the URLs where customers will be redirected after payment:
+    
+    - **Approved Page**: URL for successful payments (defaults to site home)
+    - **Declined Page**: URL for declined payments (defaults to site home)
+    - **Cancel Page**: URL when customer cancels (defaults to site home)
+    - **Process Page Azul**: URL of the payment process page you created during installation
+    
+    Example configuration:
+    ```
+    Approved Page: https://yoursite.com/thank-you
+    Declined Page: https://yoursite.com/payment-failed
+    Cancel Page: https://yoursite.com/cart
+    Process Page: https://yoursite.com/azul-process
+    ```
+    
+    <Info>
+    The Process Page URL is critical - this must be the page you created with the "Azul - WooCommerce Process" template.
+    </Info>
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Save settings">
+    Click **Save changes** at the bottom of the page.
+    
+    Your payment gateway is now configured and ready for testing!
+  </Step>
+</Steps>
+
+## Understanding the payment flow
+
+Here's what happens when a customer makes a payment:
+
+1. **Checkout**: Customer selects Azul as payment method
+2. **Order creation**: WooCommerce creates the order
+3. **Hash generation**: Plugin generates SHA-512 authentication hash
+4. **Redirect to process page**: Customer is sent to your process page
+5. **Auto-submit to Azul**: Process page automatically submits payment data to Azul
+6. **Customer enters card details**: On Azul's secure payment page
+7. **Payment processing**: Azul processes the transaction
+8. **Return to your site**: Customer is redirected back based on payment result
+9. **Order update**: Plugin validates response and updates order status
+
+## How authentication works
+
+The plugin generates a SHA-512 hash to authenticate each transaction. Here's the code from `AzulPaymentGateway.php:190-192`:
+
+```php
+$this->authHash = hash('sha512', $this->merchantId . $this->merchantName . 
+                                 $this->merchantType . $this->currencyCode .
+                                 $OrderNumber . $this->cost . $this->itbis . 
+                                 $this->approvedUrl . $this->declinedUrl . 
+                                 $this->cancelUrl . $this->approvedUrl .
+                                 $this->useCustomField1 . $this->customFieldLabel . 
+                                 $this->customFieldValue . $this->useCustomField2 . 
+                                 $this->authKey );
+```
+
+This hash includes:
+- Merchant credentials
+- Order details (number, amount, tax)
+- Return URLs
+- Custom fields (order ID tracking)
+- Your secret AUTH_KEY
+
+<Warning>
+Never modify the hash generation logic. Azul requires this specific order and format to validate transactions.
+</Warning>
+
+## Tax (ITBIS) handling
+
+The plugin automatically calculates and sends Dominican tax (ITBIS) to Azul. From `AzulPaymentGateway.php:182-188`:
+
+```php
+$this->itbis = number_format($order->get_total_tax(), 2); 
+$this->itbis = str_replace(".", "", $this->itbis);
+$this->itbis = str_replace(",", "", $this->itbis);
+
+$this->cost = number_format($order->get_total(), 2); 
+$this->cost = str_replace(".", "", $this->cost);
+$this->cost = str_replace(",", "", $this->cost);
+```
+
+<Info>
+Amounts are formatted without decimal separators as required by Azul. For example, $100.50 becomes 10050.
+</Info>
+
+## Test your first transaction
+
+<Steps>
+  <Step title="Create a test product">
+    1. Go to **Products → Add New**
+    2. Create a simple product with a price
+    3. Publish the product
+  </Step>
+
+  <Step title="Add to cart and checkout">
+    1. Visit your store and add the product to cart
+    2. Proceed to checkout
+    3. Verify "Azul" (or your custom title) appears as a payment option
+    4. Fill in billing details and select Azul
+    5. Click **Place Order**
+  </Step>
+
+  <Step title="Process payment on Azul">
+    You should be automatically redirected through your process page to Azul's payment page.
+    
+    If in sandbox mode, use test card details provided by Azul.
+    
+    <Note>
+    Contact Banco Popular Dominicano for test card numbers valid in their sandbox environment.
+    </Note>
+  </Step>
+
+  <Step title="Verify order status">
+    After completing the payment:
+    
+    1. Go to **WooCommerce → Orders**
+    2. Find your test order
+    3. Verify the status is "Completed" (for approved) or "Failed" (for declined)
+    4. Check the order notes for payment details
+    
+    The order notes should include:
+    - Card number (masked)
+    - Authorization code
+    - Reference number (RRN)
+  </Step>
+</Steps>
+
+## Payment validation
+
+The plugin performs several validation checks when processing responses from Azul (see `AzulPaymentGateway.php:255-344`):
+
+### Amount verification
+
+```php
+if($Cost != $oCost) {
+    $order->update_status('failed', sprintf(__('%s Payment failed, Amount inconsistency')));
+    return;
+}
+```
+
+Ensures the amount returned by Azul matches the order total.
+
+### Response message check
+
+```php
+if($ResponseMessage != "APROBADA") {
+    $order->update_status('failed', sprintf(__('%s Payment failed, Transaction not approved')));
+    return;
+}
+```
+
+Verifies the payment was approved by Azul.
+
+### Duplicate prevention
+
+```php
+if($order->has_status('completed') || $order->has_status('processing')) {
+    return;
+}
+```
+
+Prevents processing the same payment response multiple times.
+
+## Troubleshooting
+
+### Payment redirects to wrong URL
+
+- Verify the Process Page URL is correct in settings
+- Ensure the page uses the "Azul - WooCommerce Process" template
+- Check for trailing slashes in URLs
+
+### Order remains in "Pending" status
+
+- Enable debug mode and check WooCommerce logs
+- Verify Azul is sending the response to the correct URL
+- Check that your approved URL is accessible
+
+### Authentication hash errors
+
+- Verify all merchant credentials are entered correctly
+- Ensure no extra spaces in AUTH_KEY field
+- Confirm you're using the correct sandbox/production credentials
+
+### Amount mismatch errors
+
+- Check that WooCommerce tax settings are configured correctly
+- Verify currency is set to Dominican Peso or your configured currency
+- Ensure no cart modifications between order creation and payment
+
+## Going live
+
+Before processing real transactions:
+
+<Steps>
+  <Step title="Complete Azul certification">
+    Work with Banco Popular Dominicano to complete their certification process.
+  </Step>
+
+  <Step title="Switch to production credentials">
+    Update your gateway settings with production credentials:
+    - Production AUTH_KEY
+    - Production Merchant ID
+    - Production Merchant Name
+  </Step>
+
+  <Step title="Disable sandbox mode">
+    Uncheck the **Sandbox** option in gateway settings and save.
+  </Step>
+
+  <Step title="Test with real card">
+    Process a small test transaction with a real card to verify everything works.
+  </Step>
+
+  <Step title="Monitor transactions">
+    Keep debug logging enabled initially to monitor transactions and catch any issues early.
+  </Step>
+</Steps>
+
+<Warning>
+Never use production credentials in sandbox mode or sandbox credentials in production mode. This will cause all transactions to fail.
+</Warning>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+- Learn about [configuration options](/configuration/settings) in detail
+- Understand the complete [payment flow](/integration/payment-flow)
+- Review [authentication and security](/integration/authentication)
+- Set up [order management](/features/order-management) workflows

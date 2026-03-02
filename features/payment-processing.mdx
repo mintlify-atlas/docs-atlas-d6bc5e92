@@ -1,0 +1,289 @@
+---
+title: Payment processing
+description: Learn how the WooCommerce Azul Payment Gateway processes customer payments through the Azul payment system
+---
+
+The payment processing system handles the complete flow from checkout to payment submission. This page explains how orders are prepared, how payment data is formatted, and how customers are redirected to Azul's secure payment page.
+
+## Overview
+
+The `process_payment` method is the core of the payment processing system. It executes when a customer completes checkout and submits their order for payment.
+
+<Info>
+Payment processing occurs in `AzulPaymentGateway.php:162-228`, handling order preparation, amount formatting, and secure hash generation.
+</Info>
+
+## Payment processing flow
+
+<Steps>
+  <Step title="Order initialization">
+    The system retrieves the WooCommerce order and initializes essential payment parameters:
+
+    ```php
+    global $woocommerce;
+    $order = new WC_Order( $order_id );
+    $OrderNumber = $order_id;
+    $this->currencyCode = "$";
+    ```
+  </Step>
+
+  <Step title="Custom field configuration">
+    The plugin uses custom fields to track the order ID through the Azul system:
+
+    ```php
+    $this->useCustomField1 = "1";
+    $this->customFieldLabel = "orderId";
+    $this->customFieldValue = $OrderNumber;
+    $this->useCustomField2 = "0";
+    ```
+  </Step>
+
+  <Step title="Amount formatting">
+    Order total and tax amounts are formatted according to Azul requirements (no decimal points):
+
+    ```php
+    // Format ITBIS (tax)
+    $this->itbis = number_format($order->get_total_tax(), 2);
+    $this->itbis = str_replace(".", "", $this->itbis);
+    $this->itbis = str_replace(",", "", $this->itbis);
+
+    // Format total cost
+    $this->cost = number_format($order->get_total(), 2);
+    $this->cost = str_replace(".", "", $this->cost);
+    $this->cost = str_replace(",", "", $this->cost);
+    ```
+  </Step>
+
+  <Step title="Authentication hash generation">
+    A SHA-512 hash is generated to authenticate the payment request:
+
+    ```php
+    $this->authHash = hash('sha512', 
+      $this->merchantId . 
+      $this->merchantName . 
+      $this->merchantType . 
+      $this->currencyCode .
+      $OrderNumber . 
+      $this->cost . 
+      $this->itbis . 
+      $this->approvedUrl . 
+      $this->declinedUrl . 
+      $this->cancelUrl . 
+      $this->approvedUrl .
+      $this->useCustomField1 . 
+      $this->customFieldLabel . 
+      $this->customFieldValue . 
+      $this->useCustomField2 . 
+      $this->authKey
+    );
+    ```
+  </Step>
+
+  <Step title="Form data preparation">
+    All payment parameters are assembled into a hidden fields array:
+
+    ```php
+    $hidden_fields = array(
+      'MerchantId' => $this->merchantId,
+      'MerchantName' => $this->merchantName,
+      'MerchantType' => $this->merchantType,
+      'CurrencyCode' => $this->currencyCode,
+      'itbis' => $this->itbis,
+      'OrderNumber' => $OrderNumber,
+      'Amount' => $this->cost,
+      'ApprovedUrl' => $this->approvedUrl,
+      'DeclinedUrl' => $this->declinedUrl,
+      'CancelUrl' => $this->cancelUrl,
+      'ResponsePostUrl' => $this->approvedUrl,
+      'UseCustomField1' => $this->useCustomField1,
+      'CustomField1Label' => $this->customFieldLabel,
+      'CustomField1Value' => $this->customFieldValue,
+      'UseCustomField2' => $this->useCustomField2,
+      'AuthHash' => $this->authHash,
+      'ShowTransactionResult' => 0,
+      'AzulUrl' => $this->azulUrl
+    );
+    ```
+  </Step>
+
+  <Step title="Customer redirect">
+    If the order total is valid, the customer is redirected to the process page with payment data:
+
+    ```php
+    if($this->cost != 0) {
+      return array(
+        'result' => 'success',
+        'redirect' => $this->processUrl . '?' . http_build_query($hidden_fields)
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## Amount formatting
+
+### ITBIS (tax) calculation
+
+ITBIS is the Dominican Republic's value-added tax. The system extracts the tax from WooCommerce and formats it:
+
+```php
+$this->itbis = number_format($order->get_total_tax(), 2);
+$this->itbis = str_replace(".", "", $this->itbis);
+$this->itbis = str_replace(",", "", $this->itbis);
+```
+
+<Accordion title="Example: Tax formatting">
+  **Input:** `$order->get_total_tax()` returns `150.75`
+  
+  **Step 1:** `number_format()` ensures two decimals: `"150.75"`
+  
+  **Step 2:** Remove decimal point: `"15075"`
+  
+  **Step 3:** Remove commas: `"15075"`
+  
+  **Result:** The tax amount `15075` represents RD$150.75 in Azul's format
+</Accordion>
+
+### Total amount formatting
+
+The order total follows the same formatting process:
+
+```php
+$this->cost = number_format($order->get_total(), 2);
+$this->cost = str_replace(".", "", $this->cost);
+$this->cost = str_replace(",", "", $this->cost);
+```
+
+<Warning>
+Azul requires amounts without decimal points. A payment of RD$1,234.56 must be sent as `123456`.
+</Warning>
+
+## Authentication hash (AuthHash)
+
+The AuthHash is a critical security component that prevents payment tampering. It uses SHA-512 hashing to verify payment authenticity.
+
+### Hash composition
+
+The hash includes all essential payment parameters concatenated in a specific order:
+
+1. Merchant ID
+2. Merchant name
+3. Merchant type
+4. Currency code
+5. Order number
+6. Cost (formatted amount)
+7. ITBIS (formatted tax)
+8. Approved URL
+9. Declined URL
+10. Cancel URL
+11. Response Post URL (same as Approved URL)
+12. Use Custom Field 1 flag
+13. Custom Field 1 Label
+14. Custom Field 1 Value
+15. Use Custom Field 2 flag
+16. Auth Key (secret key from Azul)
+
+<Note>
+The auth key is the secret provided by Azul and should never be exposed to clients. It's only used server-side for hash generation.
+</Note>
+
+### Hash generation example
+
+```php
+$this->authHash = hash('sha512', 
+  $this->merchantId .          // "39038540035"
+  $this->merchantName .         // "My Store"
+  $this->merchantType .         // "Comercio electronico"
+  $this->currencyCode .         // "$"
+  $OrderNumber .                // "12345"
+  $this->cost .                 // "500000" (RD$5,000.00)
+  $this->itbis .                // "84746" (RD$847.46)
+  $this->approvedUrl .          // "https://example.com/approved"
+  $this->declinedUrl .          // "https://example.com/declined"
+  $this->cancelUrl .            // "https://example.com/cancel"
+  $this->approvedUrl .          // "https://example.com/approved"
+  $this->useCustomField1 .      // "1"
+  $this->customFieldLabel .     // "orderId"
+  $this->customFieldValue .     // "12345"
+  $this->useCustomField2 .      // "0"
+  $this->authKey                // "YOUR_SECRET_KEY"
+);
+```
+
+## Environment URLs
+
+The system automatically selects the correct Azul payment URL based on the test mode setting:
+
+```php
+public function get_return_url( $order ) {
+  if ( $this->testmode ) {
+    $this->azulUrl = 'https://pruebas.azul.com.do/PaymentPage/default.aspx';
+  } else {
+    $this->azulUrl = 'https://pagos.azul.com.do/PaymentPage/default.aspx';
+  }
+  return parent::get_return_url( $order );
+}
+```
+
+<Accordion title="Sandbox vs production URLs">
+  **Sandbox (test mode):** `https://pruebas.azul.com.do/PaymentPage/default.aspx`
+  
+  Use this for testing without processing real payments.
+  
+  **Production (live mode):** `https://pagos.azul.com.do/PaymentPage/default.aspx`
+  
+  Use this for processing real customer payments.
+</Accordion>
+
+## Process URL redirect
+
+The process URL is a custom page that receives the payment parameters and displays them to the customer before redirecting to Azul:
+
+```php
+return array(
+  'result' => 'success',
+  'redirect' => $this->processUrl . '?' . http_build_query($hidden_fields)
+);
+```
+
+This intermediate page typically contains a form that auto-submits to Azul's payment gateway.
+
+## Payment validation
+
+Before processing, the system validates that the order total is not zero:
+
+```php
+if($this->cost != 0) {
+  return array(
+    'result' => 'success',
+    'redirect' => $this->processUrl . '?' . http_build_query($hidden_fields)
+  );
+}
+return array(
+  'result' => 'failure',
+  'redirect' => ''
+);
+```
+
+<Warning>
+Orders with a total of zero are rejected and will not redirect to the payment page.
+</Warning>
+
+## Best practices
+
+1. **Never modify the hash algorithm** - Azul expects SHA-512 with parameters in the exact order shown
+2. **Always format amounts correctly** - Remove decimals and commas before sending to Azul
+3. **Use test mode during development** - Enable sandbox mode to avoid processing real payments
+4. **Validate order totals** - Ensure amounts are greater than zero before redirecting
+5. **Secure your auth key** - Store the auth key securely and never expose it in client-side code
+
+## Related pages
+
+<CardGroup cols={2}>
+  <Card title="Response handling" icon="webhook" href="/features/response-handling">
+    Learn how payment responses are processed
+  </Card>
+  <Card title="Order management" icon="box" href="/features/order-management">
+    Understand order status updates and notifications
+  </Card>
+</CardGroup>

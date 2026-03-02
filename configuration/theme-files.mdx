@@ -1,0 +1,520 @@
+---
+title: Theme files
+description: Set up required WordPress page templates to handle Azul payment processing and order completion
+---
+
+The WooCommerce Azul Payment Gateway requires two custom WordPress page templates to handle the payment flow. These templates are located in the `theme_files` folder and must be integrated into your WordPress theme.
+
+## Overview
+
+The payment flow requires two specialized templates:
+
+<CardGroup cols={2}>
+  <Card title="Process payment" icon="credit-card">
+    **File**: `azulWooProcessPayment.php`
+    
+    Receives payment data from WooCommerce and forwards it to Azul's payment gateway.
+  </Card>
+  <Card title="Order complete" icon="check-circle">
+    **File**: `azulOrderComplete.php`
+    
+    Displays order confirmation after successful payment and triggers customer email.
+  </Card>
+</CardGroup>
+
+## Template files location
+
+The template files are included in the plugin's `theme_files` directory:
+
+```
+woocommerce-azul/
+└── theme_files/
+    ├── azulWooProcessPayment.php
+    └── azulOrderComplete.php
+```
+
+## Installation
+
+<Steps>
+  <Step title="Locate theme directory">
+    Navigate to your active WordPress theme directory:
+    
+    ```bash
+    wp-content/themes/your-theme/
+    ```
+  </Step>
+  
+  <Step title="Copy template files">
+    Copy both template files from the plugin's `theme_files` folder to your theme directory:
+    
+    ```bash
+    cp wp-content/plugins/woocommerce-azul/theme_files/*.php wp-content/themes/your-theme/
+    ```
+  </Step>
+  
+  <Step title="Create WordPress pages">
+    In the WordPress admin, create two new pages:
+    
+    1. **Process Payment** page
+       - Title: "Process Payment" (or any title)
+       - Template: Select "Azul - WooCommerce Process"
+       - Publish the page
+    
+    2. **Order Complete** page
+       - Title: "Order Complete" (or any title)
+       - Template: Select "Azul - Order Complete"
+       - Publish the page
+  </Step>
+  
+  <Step title="Configure gateway URLs">
+    Navigate to **WooCommerce** > **Settings** > **Payments** > **Azul Payments Gateway** and set:
+    
+    - **Process Page Azul**: URL of the Process Payment page
+    - **Approved URL**: URL of the Order Complete page (optional)
+  </Step>
+</Steps>
+
+<Warning>
+  Both template files must be installed in your theme for the payment gateway to function correctly. Missing templates will cause payment processing to fail.
+</Warning>
+
+## Template 1: Process payment
+
+### Purpose
+
+The `azulWooProcessPayment.php` template receives payment parameters from WooCommerce and automatically forwards the customer to Azul's payment page.
+
+### Template code
+
+<CodeGroup>
+```php azulWooProcessPayment.php
+<?php
+/* Template Name: Azul - WooCommerce Process*/
+
+if( isset($_GET['AzulUrl']) ){
+  $AzulUrl = $_GET['AzulUrl'];
+}
+
+if( isset($_GET['MerchantId']) ){
+  $MerchantId = $_GET['MerchantId'];
+}
+
+if( isset($_GET['MerchantName']) ){
+  $MerchantName = $_GET['MerchantName'];
+}
+
+if( isset($_GET['MerchantType']) ){
+  $MerchantType = $_GET['MerchantType'];
+}
+
+// ... additional parameter extraction ...
+
+$form = '
+  <form id="orderForm" method="POST" action="'. $AzulUrl .'">
+    <input type="hidden" name="MerchantId" value="'. $MerchantId .'">
+    <input type="hidden" name="MerchantName" value="'. $MerchantName .'">
+    <input type="hidden" name="MerchantType" value="'. $MerchantType .'">
+    <input type="hidden" name="CurrencyCode" value="'. $CurrencyCode .'">
+    <input type="hidden" name="itbis" value="'. $itbis .'">
+    <input type="hidden" name="OrderNumber" value="'. $OrderNumber .'">
+    <input type="hidden" name="Amount" value="'. $Amount .'">
+    <input type="hidden" name="ApprovedUrl" value="'.  $ApprovedUrl .'">
+    <input type="hidden" name="DeclinedUrl" value="'. $DeclinedUrl .'">
+    <input type="hidden" name="CancelUrl" value="'.  $CancelUrl .'">
+    <input type="hidden" name="ResponsePostUrl" value="'. $ResponsePostUrl .'">
+    <input type="hidden" name="UseCustomField1" value="'. $UseCustomField1 .'">
+    <input type="hidden" name="CustomField1Label" value="'. $CustomField1Label .'">
+    <input type="hidden" name="CustomField1Value" value="'. $CustomField1Value .'">
+    <input type="hidden" name="UseCustomField2" value="'. $UseCustomField2 .'">
+    <input type="hidden" name="AuthHash" value="'. $AuthHash .'">
+  </form>
+';
+
+echo $form;
+
+echo '<script>
+  document.getElementById("orderForm").submit();
+</script>';
+?>
+```
+</CodeGroup>
+
+### How it works
+
+<Steps>
+  <Step title="Receive parameters">
+    The template receives payment parameters via GET query string from WooCommerce's `process_payment()` method.
+  </Step>
+  
+  <Step title="Extract values">
+    All payment parameters are extracted from the URL:
+    - Merchant credentials (ID, name, type)
+    - Order details (number, amount, tax)
+    - Redirect URLs (approved, declined, cancel)
+    - Authentication hash
+    - Azul payment URL (sandbox or production)
+  </Step>
+  
+  <Step title="Build form">
+    A hidden HTML form is constructed with all payment parameters as hidden input fields.
+  </Step>
+  
+  <Step title="Auto-submit">
+    JavaScript automatically submits the form, redirecting the customer to Azul's payment page with all required data.
+  </Step>
+</Steps>
+
+### Parameters received
+
+<ParamField path="AzulUrl" type="string" required>
+  The Azul payment gateway URL (sandbox or production) determined by the testmode setting.
+</ParamField>
+
+<ParamField path="MerchantId" type="string" required>
+  The merchant identifier from gateway settings.
+</ParamField>
+
+<ParamField path="MerchantName" type="string" required>
+  The merchant business name from gateway settings.
+</ParamField>
+
+<ParamField path="MerchantType" type="string" required>
+  The merchant type classification from gateway settings.
+</ParamField>
+
+<ParamField path="CurrencyCode" type="string" default="$">
+  The currency symbol for the transaction.
+</ParamField>
+
+<ParamField path="OrderNumber" type="integer" required>
+  The WooCommerce order ID.
+</ParamField>
+
+<ParamField path="Amount" type="string" required>
+  The total order amount formatted without decimals (cents only).
+</ParamField>
+
+<ParamField path="itbis" type="string" required>
+  The tax amount (ITBIS) formatted without decimals.
+</ParamField>
+
+<ParamField path="AuthHash" type="string" required>
+  The SHA-512 authentication hash generated from merchant credentials and order data.
+</ParamField>
+
+<ParamField path="ApprovedUrl" type="string" required>
+  URL for successful payment redirect.
+</ParamField>
+
+<ParamField path="DeclinedUrl" type="string" required>
+  URL for declined payment redirect.
+</ParamField>
+
+<ParamField path="CancelUrl" type="string" required>
+  URL for cancelled payment redirect.
+</ParamField>
+
+<ParamField path="UseCustomField1" type="string" default="1">
+  Flag to enable custom field 1 (used for order ID tracking).
+</ParamField>
+
+<ParamField path="CustomField1Label" type="string" default="orderId">
+  Label for custom field 1.
+</ParamField>
+
+<ParamField path="CustomField1Value" type="string" required>
+  Value for custom field 1 (the order number).
+</ParamField>
+
+## Template 2: Order complete
+
+### Purpose
+
+The `azulOrderComplete.php` template displays order confirmation details after successful payment and triggers the customer completion email.
+
+### Template code
+
+<CodeGroup>
+```php azulOrderComplete.php
+<?php
+/* Template Name: Azul - Order Complete*/
+
+get_template_part('header'); 
+
+if (isset($_GET['ResponseMessage'])) {
+  $ResponseMessage = $_GET['ResponseMessage'];
+}
+
+if (isset($_GET['OrderNumber'])) {
+  $OrderNumber = $_GET['OrderNumber'];
+}
+
+if (isset($_GET['AuthorizationCode'])) {
+  $AuthorizationCode = $_GET['AuthorizationCode'];
+}
+
+$order = new WC_Order( $OrderNumber );
+
+// the email we want to send
+$email_class = 'WC_Email_Customer_Completed_Order';
+
+// load the WooCommerce Emails
+$wc_emails = new WC_Emails();
+$emails = $wc_emails->get_emails();
+
+// select the email we want & trigger it to send
+$new_email = $emails[$email_class];
+$body = $new_email->trigger($OrderNumber);
+
+echo '<div id="orderDetails" style="margin: 0 auto; width: 80%; margin-bottom: 50px; margin-top: 50px;">';
+
+echo '<div id="orderTitle"><b>Su orden fue completada, le enviaremos un correo electronico con los detalles del pedido. </b><br /><br /></div>';
+echo '<div id="orderNumber"><b>Numero de orden: </b>' . $OrderNumber. '</div>';
+echo '<div id="orderTotal"><b>Monto Total: </b>' . $order->get_total() . '</div>';
+echo '<div id="orderAuth"><b>Numero de Autorizacion: </b>' . $AuthorizationCode . '</div>';
+
+echo '</div>';
+
+get_template_part('footer'); 
+?>
+```
+</CodeGroup>
+
+### How it works
+
+<Steps>
+  <Step title="Receive response">
+    The template receives transaction response parameters from Azul via GET query string.
+  </Step>
+  
+  <Step title="Load order">
+    The WooCommerce order is loaded using the OrderNumber parameter.
+  </Step>
+  
+  <Step title="Send email">
+    The WooCommerce "Order Completed" email is triggered and sent to the customer.
+  </Step>
+  
+  <Step title="Display confirmation">
+    Order details are displayed to the customer:
+    - Order number
+    - Total amount
+    - Authorization code from Azul
+  </Step>
+</Steps>
+
+### Response parameters
+
+<ParamField path="ResponseMessage" type="string">
+  The payment response message from Azul (e.g., "APROBADA" for approved).
+</ParamField>
+
+<ParamField path="OrderNumber" type="integer" required>
+  The WooCommerce order ID.
+</ParamField>
+
+<ParamField path="AuthorizationCode" type="string">
+  The authorization code assigned by Azul for the successful transaction.
+</ParamField>
+
+<ParamField path="Amount" type="string">
+  The transaction amount.
+</ParamField>
+
+<ParamField path="DateTime" type="string">
+  The transaction date and time.
+</ParamField>
+
+<ParamField path="ResponseCode" type="string">
+  The numeric response code from the payment processor.
+</ParamField>
+
+<ParamField path="RRN" type="string">
+  The Retrieval Reference Number for the transaction.
+</ParamField>
+
+<ParamField path="CardNumber" type="string">
+  The masked card number used for payment.
+</ParamField>
+
+## Customization
+
+### Styling the order complete page
+
+The default template uses inline styles. You can customize the appearance by:
+
+1. **Adding custom CSS** to your theme's stylesheet:
+
+```css
+#orderDetails {
+  max-width: 600px;
+  margin: 50px auto;
+  padding: 30px;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+#orderTitle {
+  font-size: 18px;
+  color: #2c3e50;
+  margin-bottom: 20px;
+}
+
+#orderNumber,
+#orderTotal,
+#orderAuth {
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+}
+```
+
+2. **Modifying the template** to use your theme's structure:
+
+```php
+<?php
+get_header();
+
+// ... payment processing code ...
+
+?>
+<div class="woocommerce">
+  <div class="order-confirmation">
+    <h1><?php _e('Order Completed', 'woo_azul'); ?></h1>
+    <p><?php _e('Thank you for your order. A confirmation email has been sent.', 'woo_azul'); ?></p>
+    
+    <table class="order-details">
+      <tr>
+        <th><?php _e('Order Number', 'woo_azul'); ?></th>
+        <td><?php echo $OrderNumber; ?></td>
+      </tr>
+      <tr>
+        <th><?php _e('Total Amount', 'woo_azul'); ?></th>
+        <td><?php echo $order->get_total(); ?></td>
+      </tr>
+      <tr>
+        <th><?php _e('Authorization Code', 'woo_azul'); ?></th>
+        <td><?php echo $AuthorizationCode; ?></td>
+      </tr>
+    </table>
+  </div>
+</div>
+<?php
+
+get_footer();
+?>
+```
+
+### Adding loading screen to process page
+
+Enhance user experience by showing a loading indicator while redirecting to Azul:
+
+```php
+<?php
+/* Template Name: Azul - WooCommerce Process*/
+
+// ... parameter extraction ...
+
+?>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Processing Payment...</title>
+  <style>
+    .loading-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: Arial, sans-serif;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #0066CC;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="loading-container">
+    <div class="spinner"></div>
+    <p>Redirecting to secure payment page...</p>
+  </div>
+  
+  <?php echo $form; ?>
+  
+  <script>
+    document.getElementById("orderForm").submit();
+  </script>
+</body>
+</html>
+```
+
+<Note>
+  When customizing templates, ensure you maintain all the core functionality, especially the form submission and parameter handling.
+</Note>
+
+## Troubleshooting
+
+### Template not appearing in page attributes
+
+**Cause**: Template files are not in the active theme directory.
+
+**Solution**: Verify the files are copied to your active theme folder (not the parent theme if using a child theme).
+
+### Payment redirects to 404 page
+
+**Cause**: The Process URL in gateway settings doesn't match the created page URL.
+
+**Solution**: 
+1. Check the URL of your Process Payment page
+2. Update the **Process Page Azul** setting with the correct URL
+3. Save the gateway settings
+
+### Email not sending
+
+**Cause**: WooCommerce email settings may be misconfigured.
+
+**Solution**:
+1. Test WooCommerce emails are working: **WooCommerce** > **Settings** > **Emails**
+2. Verify the order status is set to "completed" in the database
+3. Check email logs if you have an SMTP plugin installed
+
+### Order confirmation shows wrong amount
+
+**Cause**: The response amount format may not match the order total.
+
+**Solution**: The gateway validates amounts before updating order status. If you see this issue, check:
+- The amount formatting in `process_payment()` method (line 186-188)
+- The amount comparison logic (line 319)
+- Ensure ITBIS (tax) is calculated correctly
+
+## Security considerations
+
+<Warning>
+  The process payment template receives sensitive payment data via URL parameters. Never log or store these parameters outside of WooCommerce's secure handling.
+</Warning>
+
+- The authentication hash validates all payment requests
+- Amount validation occurs in the gateway's response handler
+- Never modify the hash generation or validation logic
+- Always use HTTPS for pages with these templates
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Payment flow" icon="diagram-project" href="/integration/payment-flow">
+    Understand the complete payment processing workflow
+  </Card>
+  <Card title="Response handling" icon="webhook" href="/features/response-handling">
+    Learn how payment responses are processed and validated
+  </Card>
+</CardGroup>

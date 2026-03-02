@@ -1,0 +1,574 @@
+---
+title: "Callbacks"
+description: "How Azul sends payment responses back, URL parameters, and response validation"
+---
+
+## Overview
+
+After processing a payment, Azul redirects the customer back to your site with transaction details as URL parameters. Your site must validate and process these responses to update order statuses accordingly.
+
+## Response mechanism
+
+Azul uses a **GET redirect** to return payment results to your site. The response is sent to the configured response URLs (ApprovedUrl, DeclinedUrl, or CancelUrl) with all transaction details as query string parameters.
+
+<Info>
+Azul does not use webhooks or server-to-server callbacks. All responses come through customer browser redirects.
+</Info>
+
+## Response parameters
+
+When Azul redirects back to your site, it includes the following parameters in the URL:
+
+### Core parameters
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|--------|
+| OrderNumber | string | The order ID from your site | "1234" |
+| Amount | string | Transaction amount (no decimals) | "10099" |
+| ResponseMessage | string | Payment result message | "APROBADA" |
+| ResponseCode | string | Payment response code | "00" |
+| AuthorizationCode | string | Authorization code from bank | "123456" |
+| DateTime | string | Transaction date and time | "2024-03-02 14:30:00" |
+| IsoCode | string | ISO response code | "00" |
+| RRN | string | Retrieval Reference Number | "123456789012" |
+| CardNumber | string | Masked card number | "************1234" |
+| AuthHash | string | Response authentication hash | "a1b2c3..." |
+| AzulUrl | string | Azul payment page URL (if present, indicates process page) | "https://..." |
+
+### Response message values
+
+<Tabs>
+<Tab title="Approved">
+**Value**: `APROBADA`
+
+The payment was successfully processed and funds were authorized.
+
+```php
+if($ResponseMessage == "APROBADA") {
+    // Payment successful
+    $order->update_status('completed');
+}
+```
+</Tab>
+
+<Tab title="Declined">
+**Value**: `DECLINADA`
+
+The payment was declined by the card issuer.
+
+```php
+if($ResponseMessage != "APROBADA") {
+    // Payment failed
+    $order->update_status('failed');
+}
+```
+</Tab>
+
+<Tab title="Error">
+**Value**: Various error messages
+
+An error occurred during processing (insufficient funds, invalid card, etc.).
+</Tab>
+</Tabs>
+
+## Response handler implementation
+
+The response handler is triggered when Azul redirects back to your site. It validates the response and updates the order accordingly.
+
+### Initialization
+
+See `AzulPaymentGateway.php:243-252`:
+
+```php
+add_action('init', 'azulResponse');
+
+function azulResponse() {
+    if(isset($_GET['OrderNumber'])) {
+        // Start the gateways
+        WC()->payment_gateways();
+        checkResponse();
+    }
+}
+```
+
+The handler checks for the presence of `OrderNumber` in the URL to determine if this is an Azul response.
+
+### Response validation function
+
+The complete `checkResponse()` function validates and processes the payment response:
+
+```php
+function checkResponse() {
+    global $woocommerce;
+    
+    $aUrl = '';
+    
+    // Extract URL parameters
+    if (isset($_GET['AzulUrl'])) {
+        $aUrl = $_GET['AzulUrl'];
+    }
+    
+    if (isset($_GET['ResponseMessage'])) {
+        $ResponseMessage = $_GET['ResponseMessage'];
+    }
+    
+    if (isset($_GET['OrderNumber'])) {
+        $OrderNumber = $_GET['OrderNumber'];
+    }
+    
+    if (isset($_GET['Amount'])) {
+        $Cost = $_GET['Amount'];
+    }
+    
+    if (isset($_GET['AuthorizationCode'])) {
+        $AuthorizationCode = $_GET['AuthorizationCode'];
+    }
+    
+    if (isset($_GET['DateTime'])) {
+        $DateTime = $_GET['DateTime'];
+    }
+    
+    if (isset($_GET['ResponseCode'])) {
+        $ResponseCode = $_GET['ResponseCode'];
+    }
+    
+    if (isset($_GET['IsoCode'])) {
+        $IsoCode = $_GET['IsoCode'];
+    }
+    
+    if (isset($_GET['RRN'])) {
+        $RRN = $_GET['RRN'];
+    }
+    
+    if (isset($_GET['CardNumber'])) {
+        $CardNumber = $_GET['CardNumber'];
+    }
+    
+    if (isset($_GET['AuthHash'])) {
+        $hash = $_GET['AuthHash'];
+    }
+    
+    // Skip if this is the process page redirect
+    if($aUrl == "") {
+        // Validate order exists
+        if($OrderNumber == 0 || $OrderNumber == '') {
+            return;
+        }
+        
+        $order = new WC_Order($OrderNumber);
+        $paymentId = $order->get_transaction_id();
+        
+        // Check if order already processed
+        if($order->has_status('completed') || $order->has_status('processing')) {
+            return;
+        }
+        
+        // Validate amount
+        $oCost = number_format($order->get_total(), 2);
+        $oCost = str_replace(".", "", $oCost);
+        $oCost = str_replace(",", "", $oCost);
+        
+        if($Cost != $oCost) {
+            $order->update_status('failed', 
+                sprintf(__('%s Pago fallido, Inconsistencia en valores, Numero de tarjeta: '. $CardNumber, 'woocommerce'), 
+                $order->title, $paymentId)
+            );
+            return;
+        }
+        
+        // Validate approval
+        if($ResponseMessage != "APROBADA") {
+            $order->update_status('failed', 
+                sprintf(__('%s Pago fallido, Transaccion no aprobada. Numero de tarjeta: '. $CardNumber, 'woocommerce'), 
+                $order->title, $paymentId)
+            );
+            return;
+        }
+        
+        // Payment approved - update order
+        $order->update_status('completed', 
+            sprintf(__('%s Pago completado! Numero de tarjeta: <b>'. $CardNumber . '</b>Codigo Autorizacion: <b>' . $AuthorizationCode . '</b> Numero de Referencia: <b>'. $RRN.'</b>', 'woocommerce'), 
+            $order->title, $paymentId)
+        );
+        
+        $woocommerce->cart->empty_cart();
+        $email_class = 'WC_Email_Customer_Completed_Order';
+        
+        return array(
+            'result' => 'success',
+            'redirect' => get_site_url()
+        );
+    }
+    
+    return;
+}
+```
+
+## Validation steps
+
+The response handler performs several critical validations:
+
+<Steps>
+
+<Step title="Check for process page redirect">
+The handler first checks if this is a redirect to the process page (AzulUrl parameter present) or an actual payment response.
+
+```php
+if (isset($_GET['AzulUrl'])) {
+    $aUrl = $_GET['AzulUrl'];
+}
+
+if($aUrl == "") {
+    // This is a payment response, proceed with validation
+}
+```
+</Step>
+
+<Step title="Validate order exists">
+Ensure the OrderNumber is valid and corresponds to an actual order.
+
+```php
+if($OrderNumber == 0 || $OrderNumber == '') {
+    return;
+}
+
+$order = new WC_Order($OrderNumber);
+```
+</Step>
+
+<Step title="Check order status">
+Prevent duplicate processing by checking if the order is already completed or processing.
+
+```php
+if($order->has_status('completed') || $order->has_status('processing')) {
+    return;
+}
+```
+
+<Warning>
+This prevents duplicate payment processing if the customer refreshes the page or clicks back.
+</Warning>
+</Step>
+
+<Step title="Validate amount">
+Verify the amount returned by Azul matches the original order amount.
+
+```php
+// Get order total and format it the same way as when sending
+$oCost = number_format($order->get_total(), 2);
+$oCost = str_replace(".", "", $oCost);
+$oCost = str_replace(",", "", $oCost);
+
+// Compare with returned amount
+if($Cost != $oCost) {
+    $order->update_status('failed', 
+        sprintf(__('%s Pago fallido, Inconsistencia en valores, Numero de tarjeta: '. $CardNumber, 'woocommerce'), 
+        $order->title, $paymentId)
+    );
+    return;
+}
+```
+
+<Warning>
+Amount validation is critical to prevent fraud. Never skip this check.
+</Warning>
+</Step>
+
+<Step title="Check response message">
+Verify the payment was approved by checking the ResponseMessage.
+
+```php
+if($ResponseMessage != "APROBADA") {
+    $order->update_status('failed', 
+        sprintf(__('%s Pago fallido, Transaccion no aprobada. Numero de tarjeta: '. $CardNumber, 'woocommerce'), 
+        $order->title, $paymentId)
+    );
+    return;
+}
+```
+</Step>
+
+<Step title="Update order and send confirmation">
+If all validations pass, mark the order as completed and empty the cart.
+
+```php
+$order->update_status('completed', 
+    sprintf(__('%s Pago completado! Numero de tarjeta: <b>'. $CardNumber . '</b>Codigo Autorizacion: <b>' . $AuthorizationCode . '</b> Numero de Referencia: <b>'. $RRN.'</b>', 'woocommerce'), 
+    $order->title, $paymentId)
+);
+
+$woocommerce->cart->empty_cart();
+```
+</Step>
+
+</Steps>
+
+## Order status updates
+
+The handler updates order status based on validation results:
+
+<Tabs>
+<Tab title="Successful payment">
+```php
+$order->update_status('completed', 
+    sprintf(__(
+        '%s Pago completado! Numero de tarjeta: <b>%s</b> ' .
+        'Codigo Autorizacion: <b>%s</b> ' .
+        'Numero de Referencia: <b>%s</b>', 
+        'woocommerce'
+    ), 
+    $order->title, 
+    $CardNumber,
+    $AuthorizationCode,
+    $RRN
+    )
+);
+```
+
+Sets the order status to **completed** and adds a note with transaction details.
+</Tab>
+
+<Tab title="Failed payment">
+```php
+$order->update_status('failed', 
+    sprintf(__(
+        '%s Pago fallido, Transaccion no aprobada. ' .
+        'Numero de tarjeta: %s', 
+        'woocommerce'
+    ), 
+    $order->title, 
+    $CardNumber
+    )
+);
+```
+
+Sets the order status to **failed** when payment is declined.
+</Tab>
+
+<Tab title="Amount mismatch">
+```php
+$order->update_status('failed', 
+    sprintf(__(
+        '%s Pago fallido, Inconsistencia en valores, ' .
+        'Numero de tarjeta: %s', 
+        'woocommerce'
+    ), 
+    $order->title, 
+    $CardNumber
+    )
+);
+```
+
+Sets the order status to **failed** when returned amount doesn't match order total.
+</Tab>
+</Tabs>
+
+## Example response URL
+
+Here's an example of what a complete response URL looks like:
+
+```
+https://yoursite.com/order-complete/?
+OrderNumber=1234&
+Amount=10099&
+ResponseMessage=APROBADA&
+ResponseCode=00&
+AuthorizationCode=123456&
+DateTime=2024-03-02%2014:30:00&
+IsoCode=00&
+RRN=123456789012&
+CardNumber=************1234&
+AuthHash=a1b2c3d4e5f6...
+```
+
+## Security considerations
+
+<Warning>
+While this implementation validates the amount and checks the response message, it does not validate the AuthHash returned by Azul. For enhanced security, consider implementing AuthHash validation.
+</Warning>
+
+### Recommended security enhancements
+
+<Steps>
+
+<Step title="Validate AuthHash">
+Implement server-side validation of the returned AuthHash to ensure the response hasn't been tampered with.
+
+```php
+// Generate expected hash from response parameters
+$expectedHash = hash('sha512', 
+    $merchantId . 
+    $orderNumber . 
+    $amount . 
+    // ... other parameters
+    $authKey
+);
+
+// Compare with received hash
+if($hash !== $expectedHash) {
+    // Response has been tampered with
+    $order->update_status('failed', 'Invalid response hash');
+    return;
+}
+```
+</Step>
+
+<Step title="Use HTTPS">
+Ensure all response URLs use HTTPS to prevent man-in-the-middle attacks.
+
+```php
+$this->approvedUrl = 'https://yoursite.com/approved';
+$this->declinedUrl = 'https://yoursite.com/declined';
+$this->cancelUrl = 'https://yoursite.com/cancelled';
+```
+</Step>
+
+<Step title="Log all responses">
+Implement comprehensive logging for audit trails and debugging.
+
+```php
+if($this->debug) {
+    error_log('Azul Response: ' . json_encode($_GET));
+}
+```
+</Step>
+
+<Step title="Implement rate limiting">
+Prevent abuse by limiting how many times an order can be processed.
+
+```php
+// Check order meta for processing attempts
+$attempts = get_post_meta($order_id, '_azul_processing_attempts', true);
+if($attempts > 3) {
+    // Too many attempts
+    return;
+}
+```
+</Step>
+
+</Steps>
+
+## Handling edge cases
+
+### Customer closes browser during payment
+
+If the customer closes their browser after paying but before being redirected back:
+
+1. The payment may be processed by Azul
+2. Your site won't receive the callback
+3. Order status won't be updated
+
+**Solution**: Implement a manual order verification process or periodically check order statuses with Azul's API (if available).
+
+### Multiple simultaneous callbacks
+
+If the customer clicks the back button or refreshes:
+
+1. The response handler may be called multiple times
+2. The order status check prevents duplicate processing
+
+```php
+if($order->has_status('completed') || $order->has_status('processing')) {
+    return; // Already processed
+}
+```
+
+### Network timeout during redirect
+
+If the network fails during redirect:
+
+1. The customer may not reach your site
+2. The order remains pending
+
+**Solution**: Implement order status monitoring and customer notification for pending orders.
+
+## Testing callbacks
+
+<Steps>
+
+<Step title="Enable debug mode">
+Turn on debug logging in the gateway settings to see all response data.
+
+```php
+'debug' => array(
+    'title' => __('Debug', 'woo_azul'),
+    'type' => 'checkbox',
+    'label' => __('Habilitar logging', 'woo_azul'),
+    'default' => 'no'
+)
+```
+</Step>
+
+<Step title="Test approved payment">
+Use Azul's test card numbers to simulate an approved payment and verify the order is marked as completed.
+</Step>
+
+<Step title="Test declined payment">
+Simulate a declined payment and verify the order is marked as failed with appropriate error message.
+</Step>
+
+<Step title="Test amount tampering">
+Manually modify the Amount parameter in the URL to test amount validation.
+</Step>
+
+<Step title="Test duplicate processing">
+Refresh the response page to ensure the order isn't processed multiple times.
+</Step>
+
+</Steps>
+
+## Troubleshooting
+
+### Order not updating after payment
+
+**Symptoms**: Payment completes on Azul but order status doesn't change.
+
+**Possible causes**:
+- Response URL not configured correctly
+- PHP errors in checkResponse function
+- WordPress not detecting the OrderNumber parameter
+
+**Solution**:
+1. Enable debug mode and check error logs
+2. Verify response URL is accessible
+3. Check that `add_action('init', 'azulResponse')` is registered
+
+### Orders marked as failed despite approval
+
+**Symptoms**: Payment approved on Azul but order marked as failed.
+
+**Possible causes**:
+- Amount formatting mismatch
+- ResponseMessage not exactly "APROBADA"
+- Order already in completed/processing status
+
+**Solution**:
+1. Check the order notes for the specific error message
+2. Verify amount formatting is consistent
+3. Review the ResponseMessage value
+
+### Cart not emptying after payment
+
+**Symptoms**: Order completes but cart still has items.
+
+**Possible causes**:
+- `$woocommerce->cart->empty_cart()` not executing
+- Session issues
+
+**Solution**:
+```php
+// Ensure this runs after order completion
+$woocommerce->cart->empty_cart();
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="Response codes" icon="list-check" href="/reference/response-codes">
+View all possible Azul response codes and their meanings
+</Card>
+
+<Card title="Troubleshooting" icon="wrench" href="/reference/troubleshooting">
+Common issues and how to resolve them
+</Card>
+</CardGroup>

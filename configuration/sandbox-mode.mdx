@@ -1,0 +1,273 @@
+---
+title: Sandbox mode
+description: Test payment processing using Azul's sandbox environment before going live
+---
+
+Sandbox mode allows you to test the complete payment flow without processing real transactions or charging actual credit cards. This is essential for development, testing, and integration verification.
+
+## Overview
+
+The WooCommerce Azul Payment Gateway supports two operational environments:
+
+<CardGroup cols={2}>
+  <Card title="Sandbox (Test)" icon="flask">
+    **URL**: `https://pruebas.azul.com.do/PaymentPage/default.aspx`
+    
+    Use for development and testing with test credentials and card numbers.
+  </Card>
+  <Card title="Production (Live)" icon="globe">
+    **URL**: `https://pagos.azul.com.do/PaymentPage/default.aspx`
+    
+    Use for processing real customer payments with live merchant credentials.
+  </Card>
+</CardGroup>
+
+## Enabling sandbox mode
+
+<Steps>
+  <Step title="Access gateway settings">
+    Navigate to **WooCommerce** > **Settings** > **Payments** > **Azul Payments Gateway**.
+  </Step>
+  
+  <Step title="Enable test mode">
+    Check the **Sandbox** checkbox to enable test mode.
+    
+    ```php
+    'testmode' => array(
+      'title'       => 'Sandbox',
+      'type'        => 'checkbox',
+      'label'       => 'Habilitar el modo de prueba',
+      'default'     => 'no',
+      'description' => 'Habilita el sandbox de azul para realizar pruebas'
+    )
+    ```
+  </Step>
+  
+  <Step title="Configure test credentials">
+    Enter your sandbox merchant credentials provided by Azul:
+    - Test AUTH_KEY
+    - Test Merchant ID
+    - Test Merchant Name
+    - Merchant Type
+  </Step>
+  
+  <Step title="Save changes">
+    Click **Save changes** to apply the sandbox configuration.
+  </Step>
+</Steps>
+
+<Note>
+  Sandbox credentials are different from production credentials. Contact Azul to obtain sandbox access and test credentials.
+</Note>
+
+## How sandbox mode works
+
+The `testmode` setting controls which Azul payment URL is used during the payment flow:
+
+<CodeGroup>
+```php AzulPaymentGateway.php:52-59
+public function get_return_url( $order ) {
+  if ( $this->testmode ) {
+    $this->azulUrl = 'https://pruebas.azul.com.do/PaymentPage/default.aspx';
+  } else {
+    $this->azulUrl = 'https://pagos.azul.com.do/PaymentPage/default.aspx';
+  }
+  return parent::get_return_url( $order );
+}
+```
+</CodeGroup>
+
+When sandbox mode is enabled:
+1. The gateway sets `$this->testmode = true` based on the checkbox setting
+2. During payment processing, the `get_return_url()` method checks the testmode value
+3. If true, the Azul sandbox URL is used; if false, the production URL is used
+4. The customer is redirected to the appropriate environment
+
+## Testing payment scenarios
+
+In sandbox mode, you can test various payment scenarios using test card numbers provided by Azul:
+
+### Successful payment
+
+Use test card numbers that Azul has configured for approval to verify:
+- Successful payment processing
+- Order status updates to "completed"
+- Customer email notifications
+- Transaction details storage
+
+### Declined payment
+
+Test with declined card numbers to verify:
+- Order status updates to "failed"
+- Proper error messaging to customers
+- Redirect to `declinedUrl`
+- No charge processed
+
+### Cancelled payment
+
+Cancel the payment during checkout to verify:
+- Customer can return to cart
+- Order remains in "pending" status
+- No transaction record is created
+
+<Warning>
+  Always test the complete payment flow in sandbox mode before enabling production mode. Verify all scenarios including approval, decline, and cancellation.
+</Warning>
+
+## Debug logging
+
+Enable debug logging during sandbox testing to track payment events:
+
+<Steps>
+  <Step title="Enable debug mode">
+    Check the **Debug** checkbox in the gateway settings to enable logging.
+  </Step>
+  
+  <Step title="Review logs">
+    WooCommerce logs are available at **WooCommerce** > **Status** > **Logs**.
+    
+    Look for logs related to Azul payment events and responses.
+  </Step>
+  
+  <Step title="Analyze payment flow">
+    Review the logs to verify:
+    - Authentication hash generation
+    - Payment parameters sent to Azul
+    - Response data received from Azul
+    - Order status updates
+  </Step>
+</Steps>
+
+<CodeGroup>
+```php Debug setting
+'debug' => array(
+  'title'       => 'Debug',
+  'type'        => 'checkbox',
+  'label'       => 'Habilitar logging',
+  'default'     => 'no',
+  'description' => 'Depura eventos y respuestas de Azul'
+)
+```
+</CodeGroup>
+
+## Switching to production
+
+Once you've thoroughly tested your integration, follow these steps to go live:
+
+<Steps>
+  <Step title="Obtain production credentials">
+    Contact Azul to receive your production merchant credentials:
+    - Production AUTH_KEY
+    - Production Merchant ID
+    - Production Merchant Name
+  </Step>
+  
+  <Step title="Update gateway settings">
+    Navigate to the Azul gateway settings and:
+    - Uncheck the **Sandbox** checkbox
+    - Replace sandbox credentials with production credentials
+    - Verify all redirect URLs are configured correctly
+  </Step>
+  
+  <Step title="Disable debug logging">
+    Uncheck the **Debug** checkbox to disable verbose logging in production.
+  </Step>
+  
+  <Step title="Test with small transaction">
+    Process a small real transaction to verify the production setup works correctly.
+  </Step>
+  
+  <Step title="Monitor initial transactions">
+    Closely monitor the first several production transactions to ensure everything processes smoothly.
+  </Step>
+</Steps>
+
+<Warning>
+  Never use production credentials in sandbox mode or sandbox credentials in production mode. This can cause payment processing failures and transaction issues.
+</Warning>
+
+## Validation differences
+
+The payment validation logic remains the same in both sandbox and production modes:
+
+```php AzulPaymentGateway.php:315-328
+// Amount validation
+if($Cost != $oCost ) {
+  $order->update_status('failed', sprintf( __( '%s Pago fallido, Inconsistencia en valores, Numero de tarjeta: '. $CardNumber, 'woocommerce' ), $order->title, $paymentId ));
+  return;
+}
+
+// Response validation
+if($ResponseMessage != "APROBADA") {
+  $order->update_status('failed', sprintf( __( '%s Pago fallido, Transaccion no aprobada. Numero de tarjeta: '. $CardNumber, 'woocommerce' ), $order->title, $paymentId ) );
+  return;
+}
+
+// Success handling
+$order->update_status('completed', sprintf( __( '%s Pago completado! Numero de tarjeta: <b>'. $CardNumber . '</b>Codigo Autorizacion: <b>' . $AuthorizationCode . '</b> Numero de Referencia: <b>'. $RRN.'</b>', 'woocommerce' ), $order->title, $paymentId ) );
+```
+
+Both environments validate:
+- Transaction amount matches order total
+- Response message is "APROBADA" (approved)
+- Order hasn't already been completed
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Always test before deploying">
+    Test every change to your payment configuration in sandbox mode before deploying to production. This includes:
+    - Theme template modifications
+    - Redirect URL changes
+    - Custom field implementations
+    - Plugin updates
+  </Accordion>
+  
+  <Accordion title="Keep credentials separate">
+    Store sandbox and production credentials separately. Consider using environment variables or WordPress constants to manage credentials securely.
+  </Accordion>
+  
+  <Accordion title="Document your test cases">
+    Maintain a checklist of test scenarios to verify before each production deployment:
+    - Successful payment with various card types
+    - Declined payment handling
+    - Cancelled payment flow
+    - Email notifications
+    - Order status updates
+  </Accordion>
+  
+  <Accordion title="Monitor transaction logs">
+    Regularly review transaction logs in both environments to identify potential issues early.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting sandbox issues
+
+### Payment redirects to production URL
+
+**Cause**: Sandbox checkbox is not checked or settings were not saved.
+
+**Solution**: Verify the sandbox setting is enabled and save the configuration again.
+
+### Test credentials not working
+
+**Cause**: Sandbox credentials may be expired or incorrect.
+
+**Solution**: Contact Azul to verify your sandbox credentials are active and correctly configured.
+
+### Different results in sandbox vs production
+
+**Cause**: Some merchant configurations may differ between environments.
+
+**Solution**: Ensure your merchant type and configuration match in both environments. Contact Azul if discrepancies persist.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Gateway settings" icon="gear" href="/configuration/settings">
+    Configure all gateway settings and merchant credentials
+  </Card>
+  <Card title="Theme files" icon="file-code" href="/configuration/theme-files">
+    Set up required WordPress templates for payment processing
+  </Card>
+</CardGroup>

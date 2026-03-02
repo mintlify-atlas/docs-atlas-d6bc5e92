@@ -1,0 +1,168 @@
+---
+title: Installation
+description: Step-by-step guide to install the WooCommerce Azul Payment Gateway plugin
+---
+
+This guide will walk you through installing and setting up the WooCommerce Azul Payment Gateway on your WordPress site.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- WordPress 5.0 or higher installed
+- WooCommerce plugin installed and activated
+- Admin access to your WordPress dashboard
+- FTP or file manager access to your WordPress installation
+- Credentials from Azul/Banco Popular Dominicano:
+  - Merchant ID
+  - Merchant Name
+  - Auth Key (authentication key)
+  - Merchant Type
+
+<Warning>
+Make sure WooCommerce is installed and activated before proceeding. The Azul payment gateway will not function without WooCommerce.
+</Warning>
+
+## Installation steps
+
+<Steps>
+  <Step title="Upload the plugin">
+    Upload the `AzulPaymentGateway` folder to your WordPress plugins directory:
+    
+    ```bash
+    /wp-content/plugins/AzulPaymentGateway/
+    ```
+    
+    You can do this via:
+    - **FTP/SFTP**: Upload the folder directly to the plugins directory
+    - **File Manager**: Use your hosting control panel's file manager
+    - **WordPress Dashboard**: Go to Plugins → Add New → Upload Plugin (if you have a ZIP file)
+    
+    The plugin file structure should look like:
+    ```
+    wp-content/
+    └── plugins/
+        └── AzulPaymentGateway/
+            └── AzulPaymentGateway.php
+    ```
+  </Step>
+
+  <Step title="Install theme template files">
+    The plugin requires two custom page templates that must be added to your active theme's directory.
+    
+    Copy these files from the `theme_files` folder to your theme directory:
+    
+    ```bash
+    /wp-content/themes/your-theme/azulWooProcessPayment.php
+    /wp-content/themes/your-theme/azulOrderComplete.php
+    ```
+    
+    Replace `your-theme` with your actual theme folder name.
+    
+    <Info>
+    If you're using a child theme, place these files in your child theme directory to prevent them from being overwritten during theme updates.
+    </Info>
+    
+    These templates are:
+    - **azulWooProcessPayment.php**: Processes payment data and redirects to Azul
+    - **azulOrderComplete.php**: Displays order confirmation after successful payment
+  </Step>
+
+  <Step title="Activate the plugin">
+    Navigate to your WordPress dashboard:
+    
+    1. Go to **Plugins → Installed Plugins**
+    2. Find **WooCommerce Azul Payment Gateway** in the list
+    3. Click **Activate**
+    
+    You should see a success message confirming the plugin is now active.
+  </Step>
+
+  <Step title="Create the process page">
+    Create a new WordPress page that will handle payment processing:
+    
+    1. Go to **Pages → Add New**
+    2. Enter a title (e.g., "Azul Payment Process")
+    3. Leave the content area empty
+    4. In the **Page Attributes** section on the right sidebar, select **Azul - WooCommerce Process** from the Template dropdown
+    5. Click **Publish**
+    6. Copy the page URL - you'll need this for configuration
+    
+    <Note>
+    This page should not be linked in your navigation menus. Customers will be automatically redirected to it during checkout.
+    </Note>
+  </Step>
+
+  <Step title="Create the order complete page (optional)">
+    Optionally create a custom order completion page:
+    
+    1. Go to **Pages → Add New**
+    2. Enter a title (e.g., "Order Complete")
+    3. Leave the content area empty
+    4. Select **Azul - Order Complete** from the Template dropdown
+    5. Click **Publish**
+    
+    This template provides a custom thank-you page with order details and sends the completion email.
+  </Step>
+
+  <Step title="Configure the payment gateway">
+    Navigate to the WooCommerce payment settings:
+    
+    1. Go to **WooCommerce → Settings**
+    2. Click the **Payments** tab
+    3. You should see **Azul Payments Gateway** in the list
+    4. Click **Manage** to configure the gateway
+    
+    Continue to the [Quick Start guide](/quickstart) for detailed configuration instructions.
+  </Step>
+</Steps>
+
+## Verify installation
+
+To verify the plugin is installed correctly:
+
+1. Check that **Azul Payments Gateway** appears in WooCommerce → Settings → Payments
+2. Verify the template options appear when creating/editing pages:
+   - Azul - WooCommerce Process
+   - Azul - Order Complete
+3. Ensure you can access the gateway settings page
+
+## File structure reference
+
+After installation, your WordPress directory should contain:
+
+```
+wordpress/
+├── wp-content/
+│   ├── plugins/
+│   │   └── AzulPaymentGateway/
+│   │       └── AzulPaymentGateway.php
+│   └── themes/
+│       └── your-theme/
+│           ├── azulWooProcessPayment.php
+│           └── azulOrderComplete.php
+```
+
+## Troubleshooting installation
+
+### Plugin doesn't appear in the list
+
+- Verify the plugin folder is in the correct location
+- Check file permissions (folders should be 755, files should be 644)
+- Ensure the main plugin file is named `AzulPaymentGateway.php`
+
+### Templates don't show in page attributes
+
+- Confirm template files are in your active theme directory
+- Check that template files have the correct header comment (Template Name)
+- Try switching to a default WordPress theme temporarily to test
+
+### Gateway doesn't appear in WooCommerce settings
+
+- Ensure WooCommerce is installed and activated
+- Deactivate and reactivate the Azul plugin
+- Clear WordPress cache if using a caching plugin
+
+## Next steps
+
+Now that the plugin is installed, proceed to the [Quick Start guide](/quickstart) to configure your payment gateway and process your first test transaction.

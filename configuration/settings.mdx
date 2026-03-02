@@ -1,0 +1,160 @@
+---
+title: Gateway settings
+description: Configure the WooCommerce Azul Payment Gateway with your merchant credentials and preferences
+---
+
+The Azul Payment Gateway provides a comprehensive set of configuration options to customize the payment experience for your WooCommerce store. All settings are configured through the WooCommerce payment gateway settings page.
+
+## Accessing settings
+
+Navigate to **WooCommerce** > **Settings** > **Payments** > **Azul Payments Gateway** to access the configuration panel.
+
+## Basic settings
+
+### Gateway status
+
+<ParamField path="enabled" type="checkbox" default="yes">
+  Enable or disable the Azul payment gateway for your store. When disabled, customers will not see Azul as a payment option during checkout.
+</ParamField>
+
+### Display settings
+
+<ParamField path="title" type="text" default="Azul">
+  The payment method title displayed to customers on the checkout page. This appears as the selectable payment option name.
+</ParamField>
+
+<ParamField path="description" type="text" default="Pago via Azul; puedes pagar usando tu tarjeta de credito o debito.">
+  The description shown to customers below the payment method title during checkout. Use this to provide additional context about the payment method.
+</ParamField>
+
+## Development settings
+
+<ParamField path="testmode" type="checkbox" default="no">
+  Enable sandbox mode for testing payments without processing real transactions. See [Sandbox mode](/configuration/sandbox-mode) for details.
+  
+  When enabled, the gateway connects to:
+  - **Test URL**: `https://pruebas.azul.com.do/PaymentPage/default.aspx`
+  
+  When disabled, the gateway connects to:
+  - **Production URL**: `https://pagos.azul.com.do/PaymentPage/default.aspx`
+</ParamField>
+
+<ParamField path="debug" type="checkbox" default="no">
+  Enable logging to debug events and responses from Azul. Logs help troubleshoot payment issues and track transaction flow.
+</ParamField>
+
+<Note>
+  Debug logging should only be enabled during development or when troubleshooting issues, as it may impact performance and log file size.
+</Note>
+
+## Merchant credentials
+
+These credentials are provided by Azul (Banco Popular Dominicano). You must obtain them before configuring the gateway.
+
+<ParamField path="authKey" type="text" required>
+  The authorization key (AUTH_KEY) provided by Azul. This is used to generate the authentication hash for secure transactions.
+  
+  **Example**: `OgYw6jAQaegyGYPUAdAHy...`
+</ParamField>
+
+<Warning>
+  Keep your AUTH_KEY secure. Never share it publicly or commit it to version control. This key is used to authenticate all payment requests.
+</Warning>
+
+<ParamField path="merchantId" type="text" required>
+  The unique merchant identifier assigned by Azul to your business account.
+  
+  **Example**: `0123456789`
+</ParamField>
+
+<ParamField path="merchantName" type="text" required>
+  The commercial name of your business as registered with Banco Popular Dominicano. This name may appear on customer transaction receipts.
+</ParamField>
+
+<ParamField path="merchantType" type="text" default="Comercio electronico">
+  The type of merchant business as classified by Banco Popular Dominicano. The default value "Comercio electronico" (e-commerce) is appropriate for most online stores.
+</ParamField>
+
+## Redirect URLs
+
+Configure the URLs where customers are redirected based on the payment outcome. These URLs handle the post-payment user experience.
+
+<ParamField path="approvedUrl" type="text" default="{site_url}">
+  The URL where customers are redirected when their payment is approved successfully. 
+  
+  This URL receives the transaction response parameters and triggers order completion.
+</ParamField>
+
+<ParamField path="declinedUrl" type="text" default="{site_url}">
+  The URL where customers are redirected when their payment is declined by the payment processor.
+  
+  Use this to display a user-friendly message explaining the payment failure.
+</ParamField>
+
+<ParamField path="cancelUrl" type="text" default="{site_url}">
+  The URL where customers are redirected if they cancel the payment process before completion.
+  
+  This typically returns customers to the checkout page to try again or select a different payment method.
+</ParamField>
+
+<ParamField path="processUrl" type="text" default="{site_url}" required>
+  The URL of the payment processing page that handles the redirect to Azul's payment gateway. This must point to a page using the `azulWooProcessPayment.php` template.
+  
+  See [Theme files](/configuration/theme-files) for setup instructions.
+</ParamField>
+
+<Note>
+  All redirect URLs default to your site URL. You can customize these to specific pages by creating custom WordPress pages with the appropriate templates.
+</Note>
+
+## Transaction flow
+
+The gateway uses these settings to process payments through the following flow:
+
+<Steps>
+  <Step title="Customer initiates payment">
+    When a customer selects Azul and completes checkout, WooCommerce calls the `process_payment` method.
+  </Step>
+  
+  <Step title="Authentication hash generation">
+    The gateway generates a SHA-512 hash using your merchant credentials, order details, and AUTH_KEY to authenticate the request.
+  </Step>
+  
+  <Step title="Redirect to process page">
+    The customer is redirected to the `processUrl` with all payment parameters encoded in the URL.
+  </Step>
+  
+  <Step title="Forward to Azul">
+    The process page automatically submits a form to Azul's payment page (test or production based on `testmode`).
+  </Step>
+  
+  <Step title="Payment processing">
+    The customer enters payment information on Azul's secure payment page.
+  </Step>
+  
+  <Step title="Response handling">
+    Based on the payment result, Azul redirects to the appropriate URL (`approvedUrl`, `declinedUrl`, or `cancelUrl`) with transaction details.
+  </Step>
+</Steps>
+
+## Security considerations
+
+<Warning>
+  The gateway validates payment responses by:
+  - Comparing the order total with the amount returned by Azul
+  - Verifying the response message is "APROBADA" (approved)
+  - Checking that the order hasn't already been completed
+  
+  Never modify these validation checks without understanding the security implications.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Sandbox mode" icon="flask" href="/configuration/sandbox-mode">
+    Learn how to test payments using Azul's sandbox environment
+  </Card>
+  <Card title="Theme files" icon="file-code" href="/configuration/theme-files">
+    Set up required WordPress page templates for payment processing
+  </Card>
+</CardGroup>

@@ -1,0 +1,105 @@
+---
+title: WooCommerce Azul Payment Gateway
+description: Accept payments through Azul by Banco Popular Dominicano in your WooCommerce store
+---
+
+Welcome to the WooCommerce Azul Payment Gateway documentation. This plugin enables seamless integration between your WooCommerce store and Azul, the payment processing service provided by Banco Popular Dominicano.
+
+## What is the Azul payment gateway?
+
+The WooCommerce Azul Payment Gateway is a WordPress plugin that allows you to accept credit and debit card payments through Azul's secure payment platform. It provides a simple yet powerful integration that handles payment processing, transaction validation, and order management.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Dual environment support" icon="toggle-on">
+    Switch seamlessly between sandbox testing and production environments without code changes
+  </Card>
+  
+  <Card title="Secure authentication" icon="shield-check">
+    SHA-512 hash generation ensures payment data integrity and prevents tampering
+  </Card>
+  
+  <Card title="Tax handling" icon="calculator">
+    Automatic ITBIS (Dominican tax) calculation and transmission to Azul
+  </Card>
+  
+  <Card title="Payment validation" icon="check-circle">
+    Comprehensive response validation including amount verification and transaction status checks
+  </Card>
+  
+  <Card title="Custom order tracking" icon="tag">
+    Order ID transmission through custom fields for accurate payment reconciliation
+  </Card>
+  
+  <Card title="Debug logging" icon="bug">
+    Optional debug mode to track events and responses from Azul for troubleshooting
+  </Card>
+</CardGroup>
+
+## How it works
+
+The payment flow is straightforward:
+
+1. Customer selects Azul as their payment method at checkout
+2. Order details are encrypted with SHA-512 authentication hash
+3. Customer is redirected to Azul's secure payment page
+4. Customer enters their card information on Azul's platform
+5. Azul processes the payment and returns the customer to your store
+6. Plugin validates the response and updates the order status accordingly
+
+<Info>
+The plugin never handles sensitive card data directly. All payment information is entered on Azul's PCI-compliant payment page.
+</Info>
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Learn how to install and activate the plugin in your WordPress site
+  </Card>
+  
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Get your first payment gateway configured in minutes
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration/settings">
+    Detailed guide on all configuration options and settings
+  </Card>
+  
+  <Card title="Payment flow" icon="money-bill-transfer" href="/integration/payment-flow">
+    Understand how payments are processed from checkout to completion
+  </Card>
+</CardGroup>
+
+## Technical overview
+
+The plugin consists of three main components:
+
+### Payment gateway class
+
+Extends `WC_Payment_Gateway` to integrate with WooCommerce's payment processing system. Handles configuration, form fields, and payment initiation.
+
+### Process template
+
+A WordPress page template that receives order data and automatically submits it to Azul's payment page via a POST form.
+
+### Response handler
+
+Processes callbacks from Azul, validates payment responses, and updates WooCommerce order statuses.
+
+<Note>
+This plugin requires WooCommerce to be installed and activated on your WordPress site.
+</Note>
+
+## Support and approval
+
+This plugin is designed to help you pass Azul's approval process. It implements all required security measures and properly handles the payment flow according to Azul's specifications.
+
+<Warning>
+Before going live, you must complete Azul's certification process and receive approval from Banco Popular Dominicano.
+</Warning>
+
+## Next steps
+
+Ready to get started? Follow our [installation guide](/installation) to set up the plugin, then proceed to the [quick start guide](/quickstart) to configure your first payment gateway.

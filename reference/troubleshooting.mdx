@@ -1,0 +1,485 @@
+---
+title: Troubleshooting
+description: Common issues and solutions for WooCommerce Azul Payment Gateway
+---
+
+This guide helps you diagnose and resolve common issues with the WooCommerce Azul Payment Gateway based on the plugin's implementation.
+
+## Payment processing issues
+
+### Payment fails with zero amount
+
+<Accordion title="Symptom">
+  - Customer cannot complete checkout
+  - Payment redirect fails
+  - Order is not sent to Azul
+</Accordion>
+
+<Accordion title="Cause">
+  The plugin validates that the order amount is not zero before processing. If the calculated amount is 0, the payment is rejected.
+  
+  **Code location:** AzulPaymentGateway.php:216-225
+  
+  ```php
+  if($this->cost != 0) {
+    return array(
+      'result' => 'success',
+      'redirect' => $this->processUrl .'?'. http_build_query($hidden_fields)
+    );
+  }
+  return array(
+    'result' => 'failure',
+    'redirect' => ''
+  );
+  ```
+</Accordion>
+
+<Accordion title="Solution">
+  1. Verify the order has products with valid prices
+  2. Check that WooCommerce order total calculation is working correctly
+  3. Ensure no coupons or discounts reduce the order to zero
+  4. Review any custom code that might modify order totals
+  
+  <Note>
+    The amount is calculated using `number_format($order->get_total(), 2)` and then converted to cents by removing decimals.
+  </Note>
+</Accordion>
+
+### Order marked as failed: "Inconsistencia en valores"
+
+<Accordion title="Symptom">
+  - Payment appears successful on Azul side
+  - Order marked as failed in WooCommerce
+  - Order note shows "Pago fallido, Inconsistencia en valores, Numero de tarjeta: [CardNumber]"
+</Accordion>
+
+<Accordion title="Cause">
+  The amount returned by Azul doesn't match the original order total. This is a security check to prevent payment tampering.
+  
+  **Code location:** AzulPaymentGateway.php:315-323
+  
+  ```php
+  $oCost = number_format($order->get_total(), 2);
+  $oCost = str_replace(".", "", $oCost);
+  $oCost = str_replace(",", "", $oCost);
+  
+  if($Cost != $oCost) {
+    $order->update_status('failed', 'Inconsistencia en valores');
+    return;
+  }
+  ```
+</Accordion>
+
+<Accordion title="Solution">
+  1. **Check for order modifications:** Verify the order total wasn't changed after payment was initiated
+  2. **Review number formatting:** Ensure locale settings aren't affecting number formatting
+  3. **Verify currency configuration:** Confirm currency settings match between WooCommerce and Azul
+  4. **Check for rounding issues:** Look for plugins that might round amounts differently
+  5. **Enable debug mode:** Turn on debug logging in plugin settings to see exact values being compared
+  
+  <Warning>
+    Never modify the amount validation logic. This security check prevents fraudulent transactions.
+  </Warning>
+</Accordion>
+
+### Order marked as failed: "Transaccion no aprobada"
+
+<Accordion title="Symptom">
+  - Customer completes payment process
+  - Redirected back to store
+  - Order status shows failed
+  - Order note: "Pago fallido, Transaccion no aprobada. Numero de tarjeta: [CardNumber]"
+</Accordion>
+
+<Accordion title="Cause">
+  The ResponseMessage from Azul is not exactly "APROBADA". This indicates the payment was declined, cancelled, or encountered an error.
+  
+  **Code location:** AzulPaymentGateway.php:325-328
+  
+  ```php
+  if($ResponseMessage != "APROBADA") {
+    $order->update_status('failed', 'Transaccion no aprobada');
+    return;
+  }
+  ```
+</Accordion>
+
+<Accordion title="Solution">
+  **Common reasons for non-approved transactions:**
+  
+  1. **Insufficient funds:** Customer's card lacks sufficient balance
+  2. **Card declined:** Bank declined the transaction
+  3. **Cancelled by user:** Customer clicked cancel on payment page
+  4. **Expired card:** Payment card has expired
+  5. **Incorrect card details:** CVV or other details entered incorrectly
+  6. **Bank security:** Transaction flagged by fraud prevention
+  
+  **Debugging steps:**
+  
+  1. Enable debug mode in plugin settings
+  2. Check WooCommerce logs for the actual ResponseMessage value
+  3. Verify the customer's card is valid and has sufficient funds
+  4. Contact Azul support if legitimate transactions are being declined
+  5. Test with a different card or payment method
+</Accordion>
+
+## Response handling issues
+
+### Order not updating after payment
+
+<Accordion title="Symptom">
+  - Customer completes payment at Azul
+  - Redirected to store
+  - Order remains in "Pending payment" status
+  - No order notes added
+</Accordion>
+
+<Accordion title="Cause">
+  The response handler is not receiving or processing the callback from Azul. Several conditions can prevent response processing:
+  
+  1. **Missing OrderNumber:** Response URL doesn't include OrderNumber parameter
+  2. **Already processed:** Order already has status "completed" or "processing"
+  3. **Invalid AzulUrl parameter:** Internal routing parameter is set incorrectly
+  
+  **Code locations:**
+  - AzulPaymentGateway.php:246-250 (Response detection)
+  - AzulPaymentGateway.php:303-305 (OrderNumber validation)
+  - AzulPaymentGateway.php:311-313 (Status check)
+</Accordion>
+
+<Accordion title="Solution">
+  1. **Verify URL configuration:**
+     - Check **ApprovedUrl** in plugin settings
+     - Ensure it points to a valid page on your site
+     - Confirm the URL is accessible (not password protected)
+  
+  2. **Check response parameters:**
+     - Enable debug logging
+     - Verify OrderNumber is present in the response URL
+     - Confirm all required parameters are being returned
+  
+  3. **Test with sandbox mode:**
+     - Enable testmode in plugin settings
+     - Process a test transaction
+     - Review debug logs for errors
+  
+  4. **Verify order status:**
+     - Check if order was already processed
+     - Look for multiple response callbacks
+     - Review order notes for processing history
+  
+  <Note>
+    The plugin automatically prevents duplicate processing by checking if the order status is already "completed" or "processing".
+  </Note>
+</Accordion>
+
+### Duplicate order processing
+
+<Accordion title="Symptom">
+  - Order processed multiple times
+  - Customer charged twice
+  - Multiple completion emails sent
+</Accordion>
+
+<Accordion title="Cause">
+  Azul may send multiple callbacks, or the customer may refresh the return page. The plugin includes protection against this, but it only works if order status is updated properly.
+  
+  **Protection code:** AzulPaymentGateway.php:311-313
+  
+  ```php
+  if($order->has_status('completed') || $order->has_status('processing')) {
+    return; // Prevent duplicate processing
+  }
+  ```
+</Accordion>
+
+<Accordion title="Solution">
+  1. **Verify status update is working:**
+     - Check that order status changes to "completed" after first processing
+     - Review WooCommerce status transition hooks for conflicts
+  
+  2. **Check for plugin conflicts:**
+     - Disable other payment or order management plugins temporarily
+     - Test if duplicate processing still occurs
+  
+  3. **Review custom code:**
+     - Look for hooks that might reset order status
+     - Check for code that processes order completion events
+  
+  <Warning>
+    If you experience duplicate processing, do not remove the status check. Instead, investigate why the order status is not being updated properly.
+  </Warning>
+</Accordion>
+
+## Configuration issues
+
+### Authentication hash errors
+
+<Accordion title="Symptom">
+  - Payment rejected by Azul
+  - "Invalid hash" or authentication error
+  - Transaction fails before payment page loads
+</Accordion>
+
+<Accordion title="Cause">
+  The AuthHash calculation doesn't match Azul's expectations. This can happen if:
+  
+  1. AUTH_KEY is incorrect or has extra spaces
+  2. Parameter order in hash calculation is wrong
+  3. Character encoding issues
+  
+  **Hash calculation:** AzulPaymentGateway.php:190-192
+  
+  ```php
+  $this->authHash = hash('sha512', 
+    $this->merchantId . $this->merchantName . $this->merchantType . 
+    $this->currencyCode . $OrderNumber . $this->cost . $this->itbis . 
+    $this->approvedUrl . $this->declinedUrl . $this->cancelUrl . 
+    $this->approvedUrl . $this->useCustomField1 . $this->customFieldLabel . 
+    $this->customFieldValue . $this->useCustomField2 . $this->authKey
+  );
+  ```
+</Accordion>
+
+<Accordion title="Solution">
+  1. **Verify AUTH_KEY:**
+     - Copy the AUTH_KEY exactly as provided by Azul
+     - Remove any leading or trailing spaces
+     - Ensure no line breaks are included
+  
+  2. **Check merchant credentials:**
+     - Confirm MerchantId is correct
+     - Verify MerchantName matches exactly (case-sensitive)
+     - Ensure MerchantType is properly configured
+  
+  3. **Test parameter values:**
+     - Enable debug logging
+     - Review the exact string being hashed
+     - Compare with Azul's documentation
+  
+  4. **Contact Azul support:**
+     - Provide them with a test transaction attempt
+     - Ask them to verify your hash calculation
+     - Request any recent changes to hash requirements
+</Accordion>
+
+### Wrong environment (sandbox vs production)
+
+<Accordion title="Symptom">
+  - Payments fail with sandbox credentials in production
+  - Test transactions appear in production
+  - Wrong payment page URL is used
+</Accordion>
+
+<Accordion title="Cause">
+  The testmode setting determines which Azul URL is used:
+  
+  - **Sandbox:** `https://pruebas.azul.com.do/PaymentPage/default.aspx`
+  - **Production:** `https://pagos.azul.com.do/PaymentPage/default.aspx`
+  
+  **Code location:** AzulPaymentGateway.php:53-58
+  
+  ```php
+  if ($this->testmode) {
+    $this->azulUrl = 'https://pruebas.azul.com.do/PaymentPage/default.aspx';
+  } else {
+    $this->azulUrl = 'https://pagos.azul.com.do/PaymentPage/default.aspx';
+  }
+  ```
+</Accordion>
+
+<Accordion title="Solution">
+  1. **For production use:**
+     - Go to WooCommerce → Settings → Payments → Azul
+     - Uncheck **Habilitar el modo de prueba**
+     - Ensure you have production credentials from Azul
+     - Save settings
+  
+  2. **For testing:**
+     - Check **Habilitar el modo de prueba**
+     - Use sandbox credentials provided by Azul
+     - Test thoroughly before switching to production
+  
+  <Warning>
+    Never use production credentials in sandbox mode or sandbox credentials in production. Always match your environment to your credentials.
+  </Warning>
+</Accordion>
+
+### Missing or incorrect redirect URLs
+
+<Accordion title="Symptom">
+  - Customer not redirected after payment
+  - 404 errors after payment
+  - Blank page after completing payment
+</Accordion>
+
+<Accordion title="Cause">
+  The ApprovedUrl, DeclinedUrl, CancelUrl, or ResponsePostUrl are not configured correctly or point to non-existent pages.
+  
+  **Default configuration:** All URLs default to `get_site_url()` which may not be appropriate for all setups.
+  
+  **Code location:** AzulPaymentGateway.php:132-155
+</Accordion>
+
+<Accordion title="Solution">
+  1. **Configure redirect URLs:**
+     - Go to WooCommerce → Settings → Payments → Azul
+     - Set **Pagina de aprobacion** to your order complete page
+     - Set **Pagina de declinacion** to checkout or cart page
+     - Set **Pagina de cancelacion** to checkout page
+     - Ensure **Process Page Azul** points to your process page template
+  
+  2. **Verify URLs are accessible:**
+     - Test each URL in a browser
+     - Confirm pages load without errors
+     - Check that pages are not password protected
+  
+  3. **Check SSL certificate:**
+     - Ensure your site has a valid SSL certificate
+     - Azul may reject non-HTTPS URLs
+     - All redirect URLs should use HTTPS
+</Accordion>
+
+## Theme integration issues
+
+### Process page not found
+
+<Accordion title="Symptom">
+  - Customer redirected to 404 page after clicking "Place order"
+  - Payment form never appears
+  - Error: "Page not found"
+</Accordion>
+
+<Accordion title="Cause">
+  The azulWooProcessPayment.php template is not properly installed in your theme, or the Process Page URL is not configured correctly.
+  
+  **Required file:** theme_files/azulWooProcessPayment.php must be added to your WordPress theme
+</Accordion>
+
+<Accordion title="Solution">
+  1. **Install the process page template:**
+     - Copy `azulWooProcessPayment.php` from `theme_files/` directory
+     - Upload to your active theme's directory
+     - Ensure file has proper permissions (644)
+  
+  2. **Create a page using the template:**
+     - Create a new WordPress page
+     - Title it "Azul Payment Process" or similar
+     - Select the "Azul - WooCommerce Process" template
+     - Publish the page
+  
+  3. **Configure the plugin:**
+     - Go to WooCommerce → Settings → Payments → Azul
+     - Set **Process Page Azul** to the URL of your newly created page
+     - Save settings
+  
+  <Note>
+    The process page auto-submits a form to Azul's payment gateway. It should not be accessed directly by users.
+  </Note>
+</Accordion>
+
+### Order complete page issues
+
+<Accordion title="Symptom">
+  - Completion page doesn't display order details
+  - Missing authorization code or order number
+  - Template errors on completion page
+</Accordion>
+
+<Accordion title="Cause">
+  The azulOrderComplete.php template is not installed or has compatibility issues with your theme.
+  
+  **Required file:** theme_files/azulOrderComplete.php
+</Accordion>
+
+<Accordion title="Solution">
+  1. **Install the template:**
+     - Copy `azulOrderComplete.php` from `theme_files/` directory
+     - Upload to your active theme's directory
+     - Verify file permissions
+  
+  2. **Check theme compatibility:**
+     - Ensure your theme has `header.php` and `footer.php` files
+     - Verify `get_template_part()` function works in your theme
+     - Test with a default WordPress theme if issues persist
+  
+  3. **Verify response parameters:**
+     - Check that URL includes OrderNumber parameter
+     - Confirm AuthorizationCode is present
+     - Enable debug mode to see all response data
+</Accordion>
+
+## Debugging tips
+
+### Enable debug logging
+
+<Accordion title="How to enable">
+  1. Go to WooCommerce → Settings → Payments → Azul
+  2. Check **Habilitar logging**
+  3. Save settings
+  4. Process a test transaction
+  5. View logs at WooCommerce → Status → Logs
+  
+  **Code reference:** AzulPaymentGateway.php:94-100
+</Accordion>
+
+### Check WooCommerce order notes
+
+<Accordion title="Where to look">
+  Order notes contain valuable information about payment processing:
+  
+  - Success: Shows card number, authorization code, and RRN
+  - Failure: Shows reason for failure and card number
+  - Status changes: Shows when and why status changed
+  
+  **Access:** WooCommerce → Orders → [Select Order] → Order Notes section
+</Accordion>
+
+### Test in sandbox mode
+
+<Accordion title="Best practices">
+  1. Always test changes in sandbox mode first
+  2. Use Azul-provided test card numbers
+  3. Verify all three scenarios:
+     - Approved transaction
+     - Declined transaction
+     - Cancelled transaction
+  4. Check order status updates correctly for each scenario
+  5. Confirm emails are sent appropriately
+</Accordion>
+
+### Common error messages
+
+<Accordion title="Reference">
+  | Message | Location | Meaning |
+  |---------|----------|----------|
+  | Pago fallido, Inconsistencia en valores | AzulPaymentGateway.php:320 | Amount mismatch |
+  | Pago fallido, Transaccion no aprobada | AzulPaymentGateway.php:326 | Payment declined |
+  | Pago completado | AzulPaymentGateway.php:329 | Payment successful |
+  | Payment cancelled | AzulPaymentGateway.php:339 | User cancelled payment |
+</Accordion>
+
+## Getting help
+
+If you continue to experience issues after trying these solutions:
+
+1. **Check plugin compatibility:**
+   - Verify WooCommerce version is compatible
+   - Test with default WordPress theme
+   - Disable other plugins temporarily
+
+2. **Review server requirements:**
+   - PHP 7.0 or higher recommended
+   - WordPress 5.0 or higher
+   - WooCommerce 3.0 or higher
+   - SSL certificate required for production
+
+3. **Contact Azul support:**
+   - Provide transaction IDs for failed payments
+   - Share debug logs (remove sensitive data)
+   - Describe exact steps to reproduce the issue
+
+4. **Contact plugin developer:**
+   - GitHub: https://github.com/michaelmota/woocommerce-azul
+   - Include WooCommerce and WordPress versions
+   - Provide relevant error logs

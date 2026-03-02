@@ -1,0 +1,288 @@
+---
+title: Response codes
+description: Understanding response parameters and codes returned by Azul Payment Gateway
+---
+
+When Azul processes a payment, it returns transaction data to your store via URL parameters. This page documents all response parameters and how the plugin handles them.
+
+## Response parameters
+
+These parameters are returned by Azul after processing a payment transaction.
+
+### Transaction status
+
+<ResponseField name="ResponseMessage" type="string" required>
+  The transaction status message returned by Azul indicating whether the payment was approved or declined.
+  
+  **Approved value:** `APROBADA`
+  
+  **Other values:** Various decline messages in Spanish
+  
+  **Validation:** The plugin checks if `ResponseMessage != "APROBADA"` to determine payment failure at AzulPaymentGateway.php:325
+  
+  <Warning>
+    The response message must exactly match "APROBADA" (uppercase) for the payment to be marked as successful. Any other value results in order failure.
+  </Warning>
+  
+  **Source:** AzulPaymentGateway.php:265-267, 325-327, azulOrderComplete.php:9-10
+</ResponseField>
+
+<ResponseField name="ResponseCode" type="string">
+  Numeric code representing the transaction result. This provides a machine-readable status indicator.
+  
+  **Example codes:**
+  - `00` - Approved
+  - Other codes indicate various decline or error conditions
+  
+  **Source:** AzulPaymentGateway.php:281-283
+</ResponseField>
+
+### Transaction identification
+
+<ResponseField name="OrderNumber" type="string" required>
+  The WooCommerce order ID that was submitted with the payment request. Used to identify which order to update.
+  
+  **Format:** Numeric order ID
+  
+  **Validation:** The plugin checks `if($OrderNumber == 0 || $OrderNumber == '')` and returns early if invalid at AzulPaymentGateway.php:303-305
+  
+  **Source:** AzulPaymentGateway.php:269-271, azulOrderComplete.php:13-15
+</ResponseField>
+
+<ResponseField name="AuthorizationCode" type="string">
+  Authorization code provided by the payment processor for approved transactions. This confirms the payment was authorized.
+  
+  **Usage:** Displayed in order notes and completion page
+  
+  **Source:** AzulPaymentGateway.php:275-277, 329, azulOrderComplete.php:17-19, 42
+</ResponseField>
+
+<ResponseField name="RRN" type="string">
+  Retrieval Reference Number - A unique identifier assigned to the transaction by the payment network.
+  
+  **Usage:** Used for transaction tracking and reconciliation
+  
+  **Display:** Shown in order completion notes as "Numero de Referencia"
+  
+  **Source:** AzulPaymentGateway.php:287-289, 329
+</ResponseField>
+
+### Transaction details
+
+<ResponseField name="Amount" type="string" required>
+  The transaction amount in cents that was processed by Azul.
+  
+  **Format:** Amount in cents (no decimal point)
+  
+  **Validation:** The plugin compares this against the original order total to detect tampering:
+  ```php
+  if($Cost != $oCost) {
+    $order->update_status('failed', 'Inconsistencia en valores');
+  }
+  ```
+  
+  **Source:** AzulPaymentGateway.php:272-274, 315-323
+</ResponseField>
+
+<ResponseField name="DateTime" type="string">
+  Timestamp of when the transaction was processed by Azul.
+  
+  **Format:** Date and time string
+  
+  **Source:** AzulPaymentGateway.php:278-280
+</ResponseField>
+
+<ResponseField name="IsoCode" type="string">
+  ISO response code from the payment network. Provides additional detail about the transaction result.
+  
+  **Source:** AzulPaymentGateway.php:284-286
+</ResponseField>
+
+### Card information
+
+<ResponseField name="CardNumber" type="string">
+  Masked card number used for the transaction. Typically shows only the last 4 digits for security.
+  
+  **Format:** Masked format (e.g., `****1234`)
+  
+  **Usage:** Displayed in order notes for reference
+  
+  **Source:** AzulPaymentGateway.php:291-293, 320, 326, 329
+</ResponseField>
+
+### Security
+
+<ResponseField name="AuthHash" type="string">
+  SHA-512 hash returned by Azul to verify the authenticity of the response data.
+  
+  **Purpose:** Prevents tampering with response parameters
+  
+  <Note>
+    While the plugin receives this parameter, the current implementation does not verify the response hash. Consider implementing hash verification for enhanced security.
+  </Note>
+  
+  **Source:** AzulPaymentGateway.php:296-298
+</ResponseField>
+
+### Internal parameters
+
+<ResponseField name="AzulUrl" type="string" internal>
+  Internal parameter used by the plugin to distinguish between response callbacks and direct page loads.
+  
+  **Behavior:** If AzulUrl is empty, the plugin processes the response. This prevents duplicate processing.
+  
+  **Source:** AzulPaymentGateway.php:261-263, 301
+</ResponseField>
+
+## Response handling flow
+
+The plugin processes Azul responses through the following workflow:
+
+### 1. Response detection
+
+<Accordion title="Initial checks">
+  When a request includes the `OrderNumber` parameter, the plugin initializes payment gateways and triggers the response handler:
+  
+  ```php
+  if(isset($_GET['OrderNumber'])) {
+    WC()->payment_gateways();
+    checkResponse();
+  }
+  ```
+  
+  **Source:** AzulPaymentGateway.php:246-250
+</Accordion>
+
+### 2. Order validation
+
+<Accordion title="Order status verification">
+  The plugin loads the order and checks its current status to prevent duplicate processing:
+  
+  ```php
+  $order = new WC_Order($OrderNumber);
+  if($order->has_status('completed') || $order->has_status('processing')) {
+    return; // Order already processed
+  }
+  ```
+  
+  <Note>
+    If an order is already marked as completed or processing, the response is ignored to prevent duplicate updates.
+  </Note>
+  
+  **Source:** AzulPaymentGateway.php:307-313
+</Accordion>
+
+### 3. Amount verification
+
+<Accordion title="Amount validation">
+  The plugin compares the returned amount against the original order total:
+  
+  ```php
+  $oCost = number_format($order->get_total(), 2);
+  $oCost = str_replace(".", "", $oCost);
+  $oCost = str_replace(",", "", $oCost);
+  
+  if($Cost != $oCost) {
+    $order->update_status('failed', 'Inconsistencia en valores');
+    return;
+  }
+  ```
+  
+  <Warning>
+    If the amounts don't match, the order is marked as failed with the message "Pago fallido, Inconsistencia en valores" and processing stops.
+  </Warning>
+  
+  **Source:** AzulPaymentGateway.php:315-323
+</Accordion>
+
+### 4. Response message validation
+
+<Accordion title="Approval check">
+  The plugin verifies the transaction was approved:
+  
+  ```php
+  if($ResponseMessage != "APROBADA") {
+    $order->update_status('failed', 'Transaccion no aprobada');
+    return;
+  }
+  ```
+  
+  **Failure message:** "Pago fallido, Transaccion no aprobada. Numero de tarjeta: [CardNumber]"
+  
+  **Source:** AzulPaymentGateway.php:325-328
+</Accordion>
+
+### 5. Order completion
+
+<Accordion title="Success handling">
+  If all validations pass, the order is marked as completed:
+  
+  ```php
+  $order->update_status('completed', sprintf(
+    'Pago completado! Numero de tarjeta: <b>%s</b> Codigo Autorizacion: <b>%s</b> Numero de Referencia: <b>%s</b>',
+    $CardNumber, $AuthorizationCode, $RRN
+  ));
+  $woocommerce->cart->empty_cart();
+  ```
+  
+  **Actions taken:**
+  - Order status updated to "completed"
+  - Shopping cart emptied
+  - Order note added with transaction details
+  - Customer redirected to site URL
+  
+  **Source:** AzulPaymentGateway.php:329-335
+</Accordion>
+
+## Common response scenarios
+
+### Successful payment
+
+**Criteria:**
+- ResponseMessage = `APROBADA`
+- Amount matches order total
+- Order not already processed
+
+**Result:**
+- Order status: `completed`
+- Cart: emptied
+- Note: Includes card number, authorization code, and RRN
+
+### Declined payment
+
+**Criteria:**
+- ResponseMessage ≠ `APROBADA`
+
+**Result:**
+- Order status: `failed`
+- Note: "Pago fallido, Transaccion no aprobada. Numero de tarjeta: [CardNumber]"
+
+### Amount mismatch
+
+**Criteria:**
+- Returned Amount ≠ Original order total
+
+**Result:**
+- Order status: `failed`
+- Note: "Pago fallido, Inconsistencia en valores, Numero de tarjeta: [CardNumber]"
+
+### Duplicate processing attempt
+
+**Criteria:**
+- Order status is already `completed` or `processing`
+
+**Result:**
+- No action taken
+- Response ignored
+
+## Order completion page
+
+After successful payment, customers can view their order details on the completion page (azulOrderComplete.php), which displays:
+
+- Order number
+- Total amount
+- Authorization code
+- Confirmation message
+- Email notification trigger
+
+**Source:** azulOrderComplete.php:37-44
